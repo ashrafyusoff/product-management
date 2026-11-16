@@ -16,7 +16,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   return (
     <aside className={cn('fixed inset-y-0 left-0 z-30 flex flex-col border-r border-slate-200 bg-white transition-[width] duration-150', collapsed ? 'w-16' : 'w-60')}>
       <div className="flex h-14 items-center gap-2 px-4 border-b border-slate-200">
-        <img src="/favicon.svg" alt="Product Management" className="h-6 w-6 rounded shrink-0" />
+        <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="Product Management" className="h-6 w-6 rounded shrink-0" />
         {!collapsed && (
           <div className="min-w-0">
             <span className="block font-semibold text-slate-900 truncate leading-tight">Product Management</span>
