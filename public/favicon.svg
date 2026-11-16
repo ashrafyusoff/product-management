@@ -1,25 +1,51 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <defs>
-    <linearGradient id="bgGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#2563EB" />
-      <stop offset="100%" stop-color="#1D4ED8" />
+    <linearGradient id="chipBg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+    <linearGradient id="dieBg" x1="16" y1="16" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F1F5F9" />
     </linearGradient>
   </defs>
-  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bgGrad)" />
-  <g stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" opacity="0.9">
-    <line x1="24" y1="11" x2="24" y2="17" />
-    <line x1="32" y1="11" x2="32" y2="17" />
-    <line x1="40" y1="11" x2="40" y2="17" />
-    <line x1="24" y1="47" x2="24" y2="53" />
-    <line x1="32" y1="47" x2="32" y2="53" />
-    <line x1="40" y1="47" x2="40" y2="53" />
-    <line x1="11" y1="24" x2="17" y2="24" />
-    <line x1="11" y1="32" x2="17" y2="32" />
-    <line x1="11" y1="40" x2="17" y2="40" />
-    <line x1="47" y1="24" x2="53" y2="24" />
-    <line x1="47" y1="32" x2="53" y2="32" />
-    <line x1="47" y1="40" x2="53" y2="40" />
+
+  <!-- Outer package body -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#chipBg)" />
+
+  <!-- IC Package Leads / Pins (Top, Bottom, Left, Right) -->
+  <g stroke="#94A3B8" stroke-width="2.6" stroke-linecap="round">
+    <line x1="23" y1="9" x2="23" y2="16" />
+    <line x1="32" y1="9" x2="32" y2="16" />
+    <line x1="41" y1="9" x2="41" y2="16" />
+
+    <line x1="23" y1="48" x2="23" y2="55" />
+    <line x1="32" y1="48" x2="32" y2="55" />
+    <line x1="41" y1="48" x2="41" y2="55" />
+
+    <line x1="9" y1="23" x2="16" y2="23" />
+    <line x1="9" y1="32" x2="16" y2="32" />
+    <line x1="9" y1="41" x2="16" y2="41" />
+
+    <line x1="48" y1="23" x2="55" y2="23" />
+    <line x1="48" y1="32" x2="55" y2="32" />
+    <line x1="48" y1="41" x2="55" y2="41" />
   </g>
-  <rect x="17" y="17" width="30" height="30" rx="6" fill="#FFFFFF" />
-  <path d="M24.5 32.5L29.5 37.5L39.5 26.5" stroke="#2563EB" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Silicon IC Die -->
+  <rect x="16" y="16" width="32" height="32" rx="6" fill="url(#dieBg)" />
+
+  <!-- Pin-1 orientation marker -->
+  <circle cx="20.5" cy="20.5" r="1.6" fill="#64748B" />
+
+  <!-- NXP-inspired tri-color semiconductor circuit traces (Orange, Blue, Green) -->
+  <path d="M22 25.5H31.5L36.5 20.5H42" stroke="#F99D1C" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="42" cy="20.5" r="2.1" fill="#F99D1C" />
+
+  <path d="M21.5 32H42.5" stroke="#0E76BC" stroke-width="3.4" stroke-linecap="round" />
+  <circle cx="21.5" cy="32" r="2.1" fill="#0E76BC" />
+  <circle cx="42.5" cy="32" r="2.1" fill="#0E76BC" />
+
+  <path d="M22 38.5H27.5L32.5 43.5H42" stroke="#7AB800" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="22" cy="38.5" r="2.1" fill="#7AB800" />
 </svg>
