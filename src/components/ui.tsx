@@ -234,7 +234,7 @@ export function LeftSlideDrawer({
     <aside
       aria-hidden={!open}
       className={cn(
-        'fixed inset-y-0 left-0 z-40 w-[330px] max-w-[92vw] bg-white border-r border-emerald-200 shadow-2xl flex flex-col transition-transform duration-200 ease-out',
+        'fixed inset-y-0 top-0 left-0 !mt-0 z-50 w-[330px] max-w-[92vw] bg-white border-r border-emerald-200 shadow-2xl flex flex-col transition-transform duration-200 ease-out',
         open ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none',
       )}
     >

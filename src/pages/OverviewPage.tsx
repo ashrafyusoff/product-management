@@ -270,17 +270,6 @@ export function OverviewPage() {
         )}
       </Card>
 
-      {/* 5-day Workweek Calendar for Tasks and Milestones (Multi-Week & Outlook 1-Week Hourly) */}
-      <div className="grid xl:grid-cols-3 gap-4">
-        <WorkWeekCalendar
-          tasks={tasks}
-          milestones={milestones}
-          projects={projects}
-          onEditTask={(t) => { setEditingTask(t); setTaskModalOpen(true) }}
-          onEditMilestone={(m) => { setEditingMilestone(m); setMilestoneModalOpen(true) }}
-        />
-      </div>
-
       {/* Analytics: Workload Line Chart + Product Status Donut Charts */}
       <div className="grid xl:grid-cols-2 gap-4 items-stretch">
         <Card
