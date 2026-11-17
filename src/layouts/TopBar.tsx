@@ -37,7 +37,7 @@ export function TopBar() {
   const go = (to: string) => { setQuery(''); setQuickOpen(false); navigate(to) }
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b border-slate-200 bg-white px-4 sm:px-6">
+    <header className="sticky top-0 z-20 flex h-14 items-center gap-4 border-b border-emerald-200/80 bg-white/95 backdrop-blur-sm px-4 sm:px-6">
       <div className="min-w-0">
         <nav className="flex items-center text-xs text-slate-400" aria-label="Breadcrumb">
           <Link to="/" className="hover:text-slate-600">Home</Link>

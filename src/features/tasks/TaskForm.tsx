@@ -22,7 +22,7 @@ export function TaskForm({
   onClose: () => void
 }) {
   return (
-    <Modal open={open} onClose={onClose} title={task ? 'Edit Task' : 'Add Task'} wide>
+    <Modal open={open} onClose={onClose} title={task ? 'Edit Task' : 'Add Task'} compact>
       <Body
         key={`${open ? 'open' : 'closed'}-${task?.id ?? 'new'}-${task?.updatedAt ?? ''}-${defaultProjectId ?? ''}-${nonNpiOnly ? 'nonnpi' : 'all'}`}
         task={task}
@@ -93,10 +93,10 @@ function Body({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} className="space-y-2.5">
       <FormError message={error} />
       <Field label="Task Name" required><Input value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid sm:grid-cols-2 gap-2.5">
         <Field label={nonNpiOnly ? 'Side-Quest' : 'Product / Workstream'} required>
           <Select
             value={form.projectId}

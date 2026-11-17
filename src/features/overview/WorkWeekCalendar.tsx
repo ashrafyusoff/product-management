@@ -400,13 +400,15 @@ export function WorkWeekCalendar({
           </select>
 
           {/* View mode switcher: Multi-Week vs Outlook-style 1-Week Hourly */}
-          <div className="inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5" role="group" aria-label="Calendar view mode">
+          <div className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50/70 p-0.5" role="group" aria-label="Calendar view mode">
             <button
               type="button"
               onClick={() => setViewMode('multi')}
               className={cn(
-                'inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                viewMode === 'multi' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+                'inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-all',
+                viewMode === 'multi'
+                  ? 'bg-primary text-white shadow-sm ring-1 ring-primary'
+                  : 'text-slate-600 hover:bg-white/80 hover:text-emerald-900',
               )}
             >
               <CalendarDays className="h-3.5 w-3.5" /> Multi-Week
@@ -415,8 +417,10 @@ export function WorkWeekCalendar({
               type="button"
               onClick={() => setViewMode('week')}
               className={cn(
-                'inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                viewMode === 'week' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+                'inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-all',
+                viewMode === 'week'
+                  ? 'bg-primary text-white shadow-sm ring-1 ring-primary'
+                  : 'text-slate-600 hover:bg-white/80 hover:text-emerald-900',
               )}
             >
               <Clock className="h-3.5 w-3.5" /> Weekly (Hours)
@@ -470,7 +474,7 @@ export function WorkWeekCalendar({
           <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-red-500 border border-red-700" /> Overdue</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-emerald-500 border border-emerald-700" /> Completed</span>
         </div>
-        <span className="text-slate-500">Click any week in the mini-calendar on the left to jump to it, or drag & drop / Copy-Cut-Paste items.</span>
+        <span className="text-slate-500">Single-click an item to select (Ctrl+C / Ctrl+X / Ctrl+V), double-click to edit, or drag & drop.</span>
       </div>
 
       {/* Split Layout: Left Outlook-style Mini Calendar + Right 5-Day Workweek Schedule */}
@@ -699,8 +703,9 @@ export function WorkWeekCalendar({
                               draggable
                               onDragStart={(e) => onDragStart(e, ref)}
                               onDragEnd={onDragEnd}
-                              onClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd); onEditMilestone?.(m) }}
-                              title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to edit`}
+                              onClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd) }}
+                              onDoubleClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd); onEditMilestone?.(m) }}
+                              title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to select · Double-click to edit`}
                               className={cn(
                                 'group relative cursor-grab active:cursor-grabbing rounded border shadow-sm transition-all select-none min-w-0',
                                 isTwoColMatrix ? 'px-1.5 py-1 text-[11px]' : 'px-2 py-1.5 text-xs',
@@ -736,8 +741,9 @@ export function WorkWeekCalendar({
                               draggable
                               onDragStart={(e) => onDragStart(e, ref)}
                               onDragEnd={onDragEnd}
-                              onClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd); onEditTask?.(t) }}
-                              title={`Task: ${t.name}\nProject: ${projectCode(t.projectId)}\nStatus: ${t.status}\nDue: ${t.dueDate}\nClick to edit`}
+                              onClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd) }}
+                              onDoubleClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd); onEditTask?.(t) }}
+                              title={`Task: ${t.name}\nProject: ${projectCode(t.projectId)}\nStatus: ${t.status}\nDue: ${t.dueDate}\nClick to select · Double-click to edit`}
                               className={cn(
                                 'group relative cursor-grab active:cursor-grabbing rounded border shadow-sm transition-all select-none min-w-0',
                                 isTwoColMatrix ? 'px-1.5 py-1 text-[11px]' : 'px-2 py-1.5 text-xs',

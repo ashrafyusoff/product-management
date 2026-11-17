@@ -7,7 +7,7 @@ import { Button, Field, FormError, Input, Modal, Select, Textarea } from '@/comp
 
 export function MilestoneForm({ open, milestone, defaultProjectId, onClose }: { open: boolean; milestone?: Milestone; defaultProjectId?: string; onClose: () => void }) {
   return (
-    <Modal open={open} onClose={onClose} title={milestone ? 'Edit Milestone' : 'Add Milestone'}>
+    <Modal open={open} onClose={onClose} title={milestone ? 'Edit Milestone' : 'Add Milestone'} compact>
       <Body key={`${open ? 'open' : 'closed'}-${milestone?.id ?? 'new'}-${milestone?.updatedAt ?? ''}`} milestone={milestone} defaultProjectId={defaultProjectId} onClose={onClose} />
     </Modal>
   )

@@ -5,9 +5,9 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: { DEFAULT: '#2563eb', hover: '#1d4ed8', soft: '#eff6ff' },
+        primary: { DEFAULT: '#059669', hover: '#047857', soft: '#ecfdf5' },
       },
-      fontFamily: { sans: ['Inter', 'system-ui', 'Segoe UI', 'sans-serif'] },
+      fontFamily: { sans: ['"Plus Jakarta Sans"', 'system-ui', 'Segoe UI', 'sans-serif'] },
     },
   },
   plugins: [],
