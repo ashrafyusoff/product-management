@@ -326,9 +326,8 @@ export function OutlookWeekHourlyView({
                         draggable
                         onDragStart={(e) => onDragStart(e, ref)}
                         onDragEnd={onDragEnd}
-                        onClick={(e) => { e.stopPropagation(); onSelectItem(ref); onSelectDay(day.ymd) }}
-                        onDoubleClick={(e) => { e.stopPropagation(); onSelectItem(ref); onSelectDay(day.ymd); onEditMilestone?.(m) }}
-                        title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to select · Double-click to edit`}
+                        onClick={(e) => { e.stopPropagation(); onSelectItem(ref); onSelectDay(day.ymd); onEditMilestone?.(m) }}
+                        title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to select & edit`}
                         className={cn(
                           'group relative cursor-grab active:cursor-grabbing rounded border px-1.5 py-1 text-[11px] shadow-sm select-none min-w-0',
                           milestoneCardStyle(m, today),
@@ -426,15 +425,14 @@ export function OutlookWeekHourlyView({
                       draggable
                       onDragStart={(e) => onDragStart(e, ref)}
                       onDragEnd={onDragEnd}
-                      onClick={(e) => { e.stopPropagation(); onSelectItem(ref); onSelectDay(day.ymd) }}
-                      onDoubleClick={(e) => { e.stopPropagation(); onSelectItem(ref); onSelectDay(day.ymd); onEditTask?.(t) }}
+                      onClick={(e) => { e.stopPropagation(); onSelectItem(ref); onSelectDay(day.ymd); onEditTask?.(t) }}
                       style={{
                         top: topPx,
                         height: heightPx,
                         left: `calc(${leftPct}% + 2px)`,
                         width: `calc(${widthPct}% - 4px)`,
                       }}
-                      title={`Task: ${t.name}\nTime: ${startLabel} – ${endLabel}\nProject: ${projectCode(t.projectId)}\nStatus: ${t.status}\nClick to select · Double-click to edit`}
+                      title={`Task: ${t.name}\nTime: ${startLabel} – ${endLabel}\nProject: ${projectCode(t.projectId)}\nStatus: ${t.status}\nClick to select & edit`}
                       className={cn(
                         'group absolute z-10 cursor-grab active:cursor-grabbing rounded border px-1.5 py-1 shadow-sm overflow-hidden select-none transition-shadow hover:z-20 hover:shadow-md',
                         taskCardStyle(t, today),

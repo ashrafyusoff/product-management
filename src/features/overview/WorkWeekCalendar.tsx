@@ -474,7 +474,7 @@ export function WorkWeekCalendar({
           <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-red-500 border border-red-700" /> Overdue</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-emerald-500 border border-emerald-700" /> Completed</span>
         </div>
-        <span className="text-slate-500">Single-click an item to select (Ctrl+C / Ctrl+X / Ctrl+V), double-click to edit, or drag & drop.</span>
+        <span className="text-slate-500">Click an item to select &amp; edit on the left · Ctrl+C / Ctrl+X / Ctrl+V or drag &amp; drop to move.</span>
       </div>
 
       {/* Split Layout: Left Outlook-style Mini Calendar + Right 5-Day Workweek Schedule */}
@@ -703,9 +703,8 @@ export function WorkWeekCalendar({
                               draggable
                               onDragStart={(e) => onDragStart(e, ref)}
                               onDragEnd={onDragEnd}
-                              onClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd) }}
-                              onDoubleClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd); onEditMilestone?.(m) }}
-                              title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to select · Double-click to edit`}
+                              onClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd); onEditMilestone?.(m) }}
+                              title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to select & edit`}
                               className={cn(
                                 'group relative cursor-grab active:cursor-grabbing rounded border shadow-sm transition-all select-none min-w-0',
                                 isTwoColMatrix ? 'px-1.5 py-1 text-[11px]' : 'px-2 py-1.5 text-xs',
@@ -741,9 +740,8 @@ export function WorkWeekCalendar({
                               draggable
                               onDragStart={(e) => onDragStart(e, ref)}
                               onDragEnd={onDragEnd}
-                              onClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd) }}
-                              onDoubleClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd); onEditTask?.(t) }}
-                              title={`Task: ${t.name}\nProject: ${projectCode(t.projectId)}\nStatus: ${t.status}\nDue: ${t.dueDate}\nClick to select · Double-click to edit`}
+                              onClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd); onEditTask?.(t) }}
+                              title={`Task: ${t.name}\nProject: ${projectCode(t.projectId)}\nStatus: ${t.status}\nDue: ${t.dueDate}\nClick to select & edit`}
                               className={cn(
                                 'group relative cursor-grab active:cursor-grabbing rounded border shadow-sm transition-all select-none min-w-0',
                                 isTwoColMatrix ? 'px-1.5 py-1 text-[11px]' : 'px-2 py-1.5 text-xs',

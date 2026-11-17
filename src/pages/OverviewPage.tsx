@@ -10,7 +10,6 @@ import { Badge, Button, Card, EmptyState, Loading } from '@/components/ui'
 import { daysUntil, formatDate, formatDateTime, newId, todayStr } from '@/utils/helpers'
 import { loadSampleData } from '@/services/sampleData'
 import { WorkWeekCalendar, addDays, getIsoWeek, getMondayOfWeek, parseYmd, toYmd } from '@/features/overview/WorkWeekCalendar'
-import { WorkWeekActionDashboard } from '@/features/overview/WorkWeekActionDashboard'
 import { TaskForm } from '@/features/tasks/TaskForm'
 import { MilestoneForm } from '@/features/tasks/MilestoneForm'
 import { WorkstreamForm } from '@/features/projects/WorkstreamForm'
@@ -46,8 +45,6 @@ function stagePillClass(status: string): string {
   }
 }
 
-type TargetDateFilter = 'all' | 'asc' | 'desc' | 'overdue' | '30d' | '60d'
-
 interface QuickNoteItem {
   id: string
   text: string
@@ -73,9 +70,6 @@ export function OverviewPage() {
   const [stageProjectId, setStageProjectId] = useState('')
   const [stageDefaultCategory, setStageDefaultCategory] = useState<string | undefined>()
   const [editingStage, setEditingStage] = useState<Workstream | undefined>()
-
-  const [overviewStageFilter, setOverviewStageFilter] = usePersistedState<string>('npi.overview.stageFilter', 'ALL')
-  const [overviewTargetFilter, setOverviewTargetFilter] = usePersistedState<TargetDateFilter>('npi.overview.targetFilter', 'all')
 
   const [quickNotes, setQuickNotes] = usePersistedState<QuickNoteItem[]>('npi.overview.quickNotes', [
     { id: 'sample-note-1', text: 'Follow up Assy PCN non-block waiver & ARAS setup', done: false, createdAt: todayStr() },
@@ -121,34 +115,6 @@ export function OverviewPage() {
     })
   }, [tasks, projects])
 
-  const filteredOverviewProducts = useMemo(() => {
-    const active = (projects ?? []).filter((p) => !p.isNonNpi && !isArchivedStatus(p.status))
-    const stageFiltered =
-      overviewStageFilter === 'ALL'
-        ? active
-        : active.filter((p) => (workstreams ?? []).some((w) => w.projectId === p.id && w.category === overviewStageFilter))
-
-    const dateFiltered = stageFiltered.filter((p) => {
-      if (overviewTargetFilter === 'overdue') return !!p.baselineDate && daysUntil(p.baselineDate) < 0
-      if (overviewTargetFilter === '30d') {
-        const d = p.baselineDate ? daysUntil(p.baselineDate) : null
-        return d !== null && d >= 0 && d <= 30
-      }
-      if (overviewTargetFilter === '60d') {
-        const d = p.baselineDate ? daysUntil(p.baselineDate) : null
-        return d !== null && d >= 0 && d <= 60
-      }
-      return true
-    })
-
-    const dir = overviewTargetFilter === 'desc' ? -1 : 1
-    return [...dateFiltered].sort((a, b) => {
-      const da = a.baselineDate || '9999-12-31'
-      const db = b.baselineDate || '9999-12-31'
-      return da.localeCompare(db) * dir
-    })
-  }, [projects, workstreams, overviewStageFilter, overviewTargetFilter])
-
   if (!projects || !workstreams || !tasks || !milestones || !logs) return <Loading />
 
   if (projects.length === 0) {
@@ -193,82 +159,15 @@ export function OverviewPage() {
 
   return (
     <div className="space-y-4">
-      {/* Top Row: Workweek Action Dashboard + Product Overview */}
-      <div className="grid xl:grid-cols-12 gap-4 items-stretch">
-        <div className="xl:col-span-7 flex flex-col">
-          <WorkWeekActionDashboard
-            tasks={tasks}
-            milestones={milestones}
-            projects={projects}
-            workstreams={workstreams}
-            onEditTask={(t) => { setEditingTask(t); setTaskModalOpen(true) }}
-            onEditMilestone={(m) => { setEditingMilestone(m); setMilestoneModalOpen(true) }}
-          />
-        </div>
-
-        <div className="xl:col-span-5 flex flex-col">
-          <Card
-            title={`Active Products (${filteredOverviewProducts.length})`}
-            className="flex-1 [&>div]:!p-3"
-            action={
-              <div className="flex flex-wrap items-center gap-1.5">
-                <select
-                  aria-label="Filter by Stage Category"
-                  value={overviewStageFilter}
-                  onChange={(e) => setOverviewStageFilter(e.target.value)}
-                  className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[11px] font-medium text-slate-600 focus:outline-none focus:ring-1 focus:ring-primary/30"
-                >
-                  <option value="ALL">All Stages</option>
-                  {PRODUCT_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-                <select
-                  aria-label="Filter by Target Date"
-                  value={overviewTargetFilter}
-                  onChange={(e) => setOverviewTargetFilter(e.target.value as TargetDateFilter)}
-                  className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[11px] font-medium text-slate-600 focus:outline-none focus:ring-1 focus:ring-primary/30"
-                >
-                  <option value="all">Target: All</option>
-                  <option value="asc">Target: Nearest ↑</option>
-                  <option value="desc">Target: Latest ↓</option>
-                  <option value="overdue">Target: Overdue</option>
-                  <option value="30d">Target: ≤ 30 Days</option>
-                  <option value="60d">Target: ≤ 60 Days</option>
-                </select>
-                <Link to="/projects" className="text-xs text-primary hover:underline ml-1 whitespace-nowrap">View all</Link>
-              </div>
-            }
-          >
-            <div className="overflow-x-auto max-h-56 overflow-y-auto -mx-3">
-              {filteredOverviewProducts.length === 0 ? (
-                <p className="py-6 text-center text-xs text-slate-400">No active products match the selected filter.</p>
-              ) : (
-                <table className="w-full text-xs">
-                  <thead className="text-[11px] text-slate-500 text-left sticky top-0 bg-white border-b border-slate-100">
-                    <tr className="whitespace-nowrap">
-                      <th className="px-3 py-1.5 font-semibold">Product Name</th>
-                      <th className="px-2 py-1.5 font-semibold">Package Type</th>
-                      <th className="px-2 py-1.5 font-semibold">Status</th>
-                      <th className="px-3 py-1.5 font-semibold">Target</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredOverviewProducts.slice(0, 8).map((p) => (
-                      <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
-                        <td className="px-3 py-1.5 font-semibold whitespace-nowrap">
-                          <Link to={`/projects/${p.id}`} className="text-primary hover:underline">{p.name}</Link>
-                          <span className="ml-1.5 text-[10px] font-normal text-slate-400">{p.code}</span>
-                        </td>
-                        <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">{p.packageType || '—'}</td>
-                        <td className="px-2 py-1.5 whitespace-nowrap"><Badge>{p.status}</Badge></td>
-                        <td className="px-3 py-1.5 whitespace-nowrap text-slate-500">{formatDate(p.baselineDate)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </Card>
-        </div>
+      {/* Top: 5-day Workweek Calendar for Tasks and Milestones (Multi-Week & Outlook 1-Week Hourly) */}
+      <div className="grid xl:grid-cols-3 gap-4">
+        <WorkWeekCalendar
+          tasks={tasks}
+          milestones={milestones}
+          projects={projects}
+          onEditTask={(t) => { setMilestoneModalOpen(false); setEditingTask(t); setTaskModalOpen(true) }}
+          onEditMilestone={(m) => { setTaskModalOpen(false); setEditingMilestone(m); setMilestoneModalOpen(true) }}
+        />
       </div>
 
       {/* Product Management Stage Matrix: Header = Product Name + Package Type, Columns = 8 Categories */}
@@ -534,8 +433,8 @@ export function OverviewPage() {
         </Card>
       </div>
 
-      <TaskForm open={taskModalOpen} task={editingTask} onClose={() => { setTaskModalOpen(false); setEditingTask(undefined) }} />
-      <MilestoneForm open={milestoneModalOpen} milestone={editingMilestone} onClose={() => { setMilestoneModalOpen(false); setEditingMilestone(undefined) }} />
+      <TaskForm open={taskModalOpen} task={editingTask} variant="drawer" onClose={() => { setTaskModalOpen(false); setEditingTask(undefined) }} />
+      <MilestoneForm open={milestoneModalOpen} milestone={editingMilestone} variant="drawer" onClose={() => { setMilestoneModalOpen(false); setEditingMilestone(undefined) }} />
       <WorkstreamForm
         open={stageModalOpen}
         projectId={stageProjectId}

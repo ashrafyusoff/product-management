@@ -208,3 +208,49 @@ export function ConfirmDialog({ open, title, message, confirmLabel = 'Delete', o
 export function FormError({ message }: { message: string }) {
   return message ? <p className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">{message}</p> : null
 }
+
+// ---------- Left Slide-Over Drawer (slides over left sidebar without blurring the view) ----------
+export function LeftSlideDrawer({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean
+  onClose: () => void
+  title: string
+  children: ReactNode
+}) {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  return (
+    <aside
+      aria-hidden={!open}
+      className={cn(
+        'fixed inset-y-0 left-0 z-40 w-[330px] max-w-[92vw] bg-white border-r border-emerald-200 shadow-2xl flex flex-col transition-transform duration-200 ease-out',
+        open ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none',
+      )}
+    >
+      <div className="flex h-14 items-center justify-between px-4 border-b border-emerald-100 bg-emerald-50/60 shrink-0">
+        <h2 className="text-sm font-bold text-slate-800 truncate">{title}</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 rounded-lg hover:bg-emerald-100 text-slate-600 hover:text-slate-900 transition-colors"
+          aria-label="Close"
+          title="Close panel"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3.5">{children}</div>
+    </aside>
+  )
+}

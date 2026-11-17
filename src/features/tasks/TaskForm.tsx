@@ -4,32 +4,45 @@ import { createTask, emptyTask, updateTask, type TaskInput } from '@/services/ta
 import { useTable } from '@/hooks/useTable'
 import { todayStr } from '@/utils/helpers'
 import { errorMessage } from '@/utils/validation'
-import { Button, Field, FormError, Input, Modal, Select, Textarea } from '@/components/ui'
+import { Button, Field, FormError, Input, LeftSlideDrawer, Modal, Select, Textarea } from '@/components/ui'
 
 // `defaultProjectId` pre-selects the project when adding from inside a project.
-// `nonNpiOnly` restricts the project dropdown strictly to Non-NPI Work items (excluding HRS projects).
+// `nonNpiOnly` restricts the project dropdown strictly to Side-Quest items.
 export function TaskForm({
   open,
   task,
   defaultProjectId,
   nonNpiOnly = false,
+  variant = 'modal',
   onClose,
 }: {
   open: boolean
   task?: Task
   defaultProjectId?: string
   nonNpiOnly?: boolean
+  variant?: 'modal' | 'drawer'
   onClose: () => void
 }) {
+  const title = task ? 'Edit Task' : 'Add Task'
+  const content = (
+    <Body
+      key={`${open ? 'open' : 'closed'}-${task?.id ?? 'new'}-${task?.updatedAt ?? ''}-${defaultProjectId ?? ''}-${nonNpiOnly ? 'nonnpi' : 'all'}`}
+      task={task}
+      defaultProjectId={defaultProjectId}
+      nonNpiOnly={nonNpiOnly}
+      onClose={onClose}
+    />
+  )
+  if (variant === 'drawer') {
+    return (
+      <LeftSlideDrawer open={open} onClose={onClose} title={title}>
+        {open ? content : null}
+      </LeftSlideDrawer>
+    )
+  }
   return (
-    <Modal open={open} onClose={onClose} title={task ? 'Edit Task' : 'Add Task'} compact>
-      <Body
-        key={`${open ? 'open' : 'closed'}-${task?.id ?? 'new'}-${task?.updatedAt ?? ''}-${defaultProjectId ?? ''}-${nonNpiOnly ? 'nonnpi' : 'all'}`}
-        task={task}
-        defaultProjectId={defaultProjectId}
-        nonNpiOnly={nonNpiOnly}
-        onClose={onClose}
-      />
+    <Modal open={open} onClose={onClose} title={title} compact>
+      {content}
     </Modal>
   )
 }

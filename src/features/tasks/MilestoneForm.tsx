@@ -3,12 +3,40 @@ import { MILESTONE_STATUSES, type Milestone, type Project } from '@/types'
 import { createMilestone, emptyMilestone, updateMilestone, type MilestoneInput } from '@/services/milestoneService'
 import { useTable } from '@/hooks/useTable'
 import { errorMessage } from '@/utils/validation'
-import { Button, Field, FormError, Input, Modal, Select, Textarea } from '@/components/ui'
+import { Button, Field, FormError, Input, LeftSlideDrawer, Modal, Select, Textarea } from '@/components/ui'
 
-export function MilestoneForm({ open, milestone, defaultProjectId, onClose }: { open: boolean; milestone?: Milestone; defaultProjectId?: string; onClose: () => void }) {
+export function MilestoneForm({
+  open,
+  milestone,
+  defaultProjectId,
+  variant = 'modal',
+  onClose,
+}: {
+  open: boolean
+  milestone?: Milestone
+  defaultProjectId?: string
+  variant?: 'modal' | 'drawer'
+  onClose: () => void
+}) {
+  const title = milestone ? 'Edit Milestone' : 'Add Milestone'
+  const content = (
+    <Body
+      key={`${open ? 'open' : 'closed'}-${milestone?.id ?? 'new'}-${milestone?.updatedAt ?? ''}`}
+      milestone={milestone}
+      defaultProjectId={defaultProjectId}
+      onClose={onClose}
+    />
+  )
+  if (variant === 'drawer') {
+    return (
+      <LeftSlideDrawer open={open} onClose={onClose} title={title}>
+        {open ? content : null}
+      </LeftSlideDrawer>
+    )
+  }
   return (
-    <Modal open={open} onClose={onClose} title={milestone ? 'Edit Milestone' : 'Add Milestone'} compact>
-      <Body key={`${open ? 'open' : 'closed'}-${milestone?.id ?? 'new'}-${milestone?.updatedAt ?? ''}`} milestone={milestone} defaultProjectId={defaultProjectId} onClose={onClose} />
+    <Modal open={open} onClose={onClose} title={title} compact>
+      {content}
     </Modal>
   )
 }
