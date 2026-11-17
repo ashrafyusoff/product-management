@@ -378,9 +378,9 @@ export function WorkWeekCalendar({
   return (
     <Card
       title="Workweek Schedule — Tasks & Milestones"
-      className="xl:col-span-3"
+      className="xl:col-span-3 [&>header]:flex-col [&>header]:items-start [&>header]:gap-2.5"
       action={
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full">
           {toast && <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded">{toast}</span>}
           {clipboard && (
             <div className="inline-flex items-center gap-1.5 rounded border border-primary/30 bg-primary-soft px-2.5 py-1 text-xs text-primary font-medium">
