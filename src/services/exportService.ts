@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import { db } from '@/database/db'
-import { isArchivedStatus, type Milestone, type PoRecord, type Project, type Task, type Workstream } from '@/types'
+import { isArchivedStatus, type Milestone, type Project, type Task, type Workstream } from '@/types'
 import { todayStr } from '@/utils/helpers'
 import { getIsoWeek, getMondayOfWeek, parseYmd, toYmd, addDays } from '@/features/overview/WorkWeekCalendar'
 import { downloadBlob } from './backupService'
@@ -10,139 +10,88 @@ import { downloadBlob } from './backupService'
 type Row = Record<string, string | number>
 
 async function lookups() {
-  const [projects, suppliers, workstreams, tasks, meetings] = await Promise.all([
-    db.projects.toArray(), db.suppliers.toArray(), db.workstreams.toArray(), db.tasks.toArray(), db.meetings.toArray(),
+  const [projects, workstreams, tasks] = await Promise.all([
+    db.projects.toArray(), db.workstreams.toArray(), db.tasks.toArray(),
   ])
-  const p = new Map(projects.map((x) => [x.id, x.code]))
-  const s = new Map(suppliers.map((x) => [x.id, x.name]))
-  const w = new Map(workstreams.map((x) => [x.id, x.name]))
+  const p = new Map(projects.map((x) => [x.id, `${x.name}${x.packageType ? ` (${x.packageType})` : ''}`]))
+  const w = new Map(workstreams.map((x) => [x.id, x.name || x.category]))
   const t = new Map(tasks.map((x) => [x.id, x.name]))
-  const m = new Map(meetings.map((x) => [x.id, x]))
   return {
     proj: (id: string) => p.get(id) ?? '',
-    sup: (id: string) => s.get(id) ?? '',
     ws: (id: string) => w.get(id) ?? '',
     task: (id: string) => t.get(id) ?? '',
-    meeting: (id: string) => m.get(id),
   }
 }
 
-export type ReportName = 'Projects' | 'Tasks' | 'Milestones' | 'Suppliers' | 'Commercial' | 'Archived' | 'Recent Activities'
-export const REPORT_NAMES: ReportName[] = ['Projects', 'Tasks', 'Milestones', 'Suppliers', 'Commercial', 'Archived', 'Recent Activities']
+export type ReportName = 'Projects' | 'Tasks' | 'Milestones' | 'Archived' | 'Recent Activities'
+export const REPORT_NAMES: ReportName[] = ['Projects', 'Tasks', 'Milestones', 'Archived', 'Recent Activities']
 
 export async function buildSheets(name: ReportName): Promise<Record<string, Row[]>> {
   const L = await lookups()
   switch (name) {
     case 'Projects': {
       const projects = await db.projects.toArray()
-      const deliverables = await db.workstreams.toArray()
+      const stages = await db.workstreams.toArray()
       return {
-        Projects: projects.map((p) => ({
-          'HRS Number': p.code, 'HW Type': p.hwType || 'FT', 'Device Name': p.deviceName, 'ATE Platform': p.atePlatform,
-          Status: p.status, 'Progress %': p.progress, 'Start Date': p.startDate,
-          'HW Required Date': p.baselineDate, Description: p.description,
+        Products: projects.map((p) => ({
+          'Project Code': p.code, 'Product Name': p.name, 'Package Type': p.packageType,
+          Priority: p.priority, Status: p.status, 'Progress %': p.progress, 'Start Date': p.startDate,
+          'Target Date': p.baselineDate, Description: p.description,
         })),
-        Deliverables: deliverables.map((w) => ({
-          'HRS Number': L.proj(w.projectId), Deliverable: w.name || w.category, MPN: w.mpn ?? '', Supplier: L.sup(w.supplierId),
-          Status: w.status, 'Progress %': w.progress, Remarks: w.remarks,
+        'Product Stages': stages.map((w) => ({
+          Product: L.proj(w.projectId), Category: w.category, Stage: w.name || w.category,
+          Status: w.status, 'Progress %': w.progress, 'Start Date': w.startDate, 'Target Date': w.targetDate, Remarks: w.remarks,
         })),
       }
     }
     case 'Tasks':
       return { Tasks: (await db.tasks.toArray()).map((t) => ({
-        Task: t.name, 'HRS Number': L.proj(t.projectId), Deliverable: L.ws(t.workstreamId), Supplier: L.sup(t.supplierId),
-        Start: t.startDate, Due: t.dueDate, Completed: t.completionDate, Priority: t.priority, Status: t.status, 'Progress %': t.progress, Remarks: t.remarks })) }
+        Task: t.name, Product: L.proj(t.projectId), Stage: L.ws(t.workstreamId),
+        Start: t.startDate, Due: t.dueDate, 'Start Time': t.startTime ?? '', 'End Time': t.endTime ?? '',
+        Completed: t.completionDate, Priority: t.priority, Status: t.status, 'Progress %': t.progress, Remarks: t.remarks })) }
     case 'Milestones':
       return { Milestones: (await db.milestones.toArray()).map((m) => ({
-        Milestone: m.name, 'HRS Number': L.proj(m.projectId), Description: m.description,
+        Milestone: m.name, Product: L.proj(m.projectId), Stage: L.ws(m.workstreamId), Description: m.description,
         Target: m.targetDate, Actual: m.actualDate, Status: m.status, Remarks: m.remarks })) }
-    case 'Suppliers':
-      return { Suppliers: (await db.suppliers.toArray()).map((s) => ({
-        Supplier: s.name, Contact: s.contactPerson, Email: s.email, Phone: s.phone, Location: s.location, Category: s.category, Remarks: s.remarks })) }
-    case 'Commercial': {
-      const [deliverables, quotations, pets, pos] = await Promise.all([
-        db.workstreams.toArray(), db.quotations.toArray(), db.petRecords.toArray(), db.poRecords.toArray(),
-      ])
-      return {
-        'Deliverable Commercial': deliverables.map((w) => {
-          const q = quotations.find((r) => r.workstreamId === w.id || (!r.workstreamId && r.projectId === w.projectId && r.supplierId === w.supplierId))
-          const pet = pets.find((r) => r.workstreamId === w.id || (!r.workstreamId && r.projectId === w.projectId && r.supplierId === w.supplierId))
-          const po = pos.find((r) => r.workstreamId === w.id || (!r.workstreamId && r.projectId === w.projectId && r.supplierId === w.supplierId))
-          return {
-            'HRS Number': L.proj(w.projectId),
-            Deliverable: w.name || w.category,
-            MPN: w.mpn ?? '',
-            Supplier: L.sup(w.supplierId || q?.supplierId || pet?.supplierId || po?.supplierId || ''),
-            'Quotation Number': q?.number ?? '',
-            'PET Number': pet?.reference ?? '',
-            'PO Number': po?.number ?? '',
-            'PO Issue Date': po?.issueDate ?? '',
-            'PO Amount': po?.amount ?? '',
-            'PO Currency': po?.currency ?? '',
-            'Expected Delivery': po?.expectedDelivery ?? '',
-            'Actual Delivery': po?.actualDelivery ?? '',
-            'Hardware Status': po?.deliveryStatus ?? 'Not Started',
-            Remarks: po?.remarks || pet?.remarks || q?.remarks || w.remarks || '',
-          }
-        }),
-      }
-    }
     case 'Archived': {
-      const [allProjects, allDeliverables, quotations, pets, pos, allTasks, allMilestones] = await Promise.all([
+      const [allProjects, allStages, allTasks, allMilestones] = await Promise.all([
         db.projects.toArray(),
         db.workstreams.toArray(),
-        db.quotations.toArray(),
-        db.petRecords.toArray(),
-        db.poRecords.toArray(),
         db.tasks.toArray(),
         db.milestones.toArray(),
       ])
       const archivedProjects = allProjects.filter((p) => isArchivedStatus(p.status))
       const archivedIds = new Set(archivedProjects.map((p) => p.id))
-      const deliverables = allDeliverables.filter((w) => archivedIds.has(w.projectId))
+      const stages = allStages.filter((w) => archivedIds.has(w.projectId))
       const tasks = allTasks.filter((t) => archivedIds.has(t.projectId))
       const milestones = allMilestones.filter((m) => archivedIds.has(m.projectId))
 
       return {
-        'Archived Projects': archivedProjects.map((p) => ({
-          'HRS Number': p.code,
-          'HW Type': p.hwType || 'FT',
-          'Device Name': p.deviceName,
-          'ATE Platform': p.atePlatform,
+        'Archived Products': archivedProjects.map((p) => ({
+          'Project Code': p.code,
+          'Product Name': p.name,
+          'Package Type': p.packageType,
+          Priority: p.priority,
           Status: p.status,
           'Progress %': p.progress,
           'Start Date': p.startDate,
-          'HW Required Date': p.baselineDate,
+          'Target Date': p.baselineDate,
           Description: p.description,
         })),
-        'Archived Deliverables': deliverables.map((w) => {
-          const q = quotations.find((r) => r.workstreamId === w.id || (!r.workstreamId && r.projectId === w.projectId && r.supplierId === w.supplierId))
-          const pet = pets.find((r) => r.workstreamId === w.id || (!r.workstreamId && r.projectId === w.projectId && r.supplierId === w.supplierId))
-          const po = pos.find((r) => r.workstreamId === w.id || (!r.workstreamId && r.projectId === w.projectId && r.supplierId === w.supplierId))
-          return {
-            'HRS Number': L.proj(w.projectId),
-            Deliverable: w.name || w.category,
-            MPN: w.mpn ?? '',
-            Supplier: L.sup(w.supplierId || q?.supplierId || pet?.supplierId || po?.supplierId || ''),
-            Status: w.status,
-            'Progress %': w.progress,
-            'Quotation Number': q?.number ?? '',
-            'PET Number': pet?.reference ?? '',
-            'PO Number': po?.number ?? '',
-            'PO Issue Date': po?.issueDate ?? '',
-            'PO Amount': po?.amount ?? '',
-            'PO Currency': po?.currency ?? '',
-            'Expected Delivery': po?.expectedDelivery ?? '',
-            'Actual Delivery': po?.actualDelivery ?? '',
-            'Hardware Status': po?.deliveryStatus ?? 'Not Started',
-            Remarks: po?.remarks || pet?.remarks || q?.remarks || w.remarks || '',
-          }
-        }),
+        'Archived Stages': stages.map((w) => ({
+          Product: L.proj(w.projectId),
+          Category: w.category,
+          Stage: w.name || w.category,
+          Status: w.status,
+          'Progress %': w.progress,
+          'Start Date': w.startDate,
+          'Target Date': w.targetDate,
+          Remarks: w.remarks,
+        })),
         'Archived Tasks': tasks.map((t) => ({
           Task: t.name,
-          'HRS Number': L.proj(t.projectId),
-          Deliverable: L.ws(t.workstreamId),
-          Supplier: L.sup(t.supplierId),
+          Product: L.proj(t.projectId),
+          Stage: L.ws(t.workstreamId),
           Start: t.startDate,
           Due: t.dueDate,
           Completed: t.completionDate,
@@ -153,7 +102,7 @@ export async function buildSheets(name: ReportName): Promise<Record<string, Row[
         })),
         'Archived Milestones': milestones.map((m) => ({
           Milestone: m.name,
-          'HRS Number': L.proj(m.projectId),
+          Product: L.proj(m.projectId),
           Description: m.description,
           Target: m.targetDate,
           Actual: m.actualDate,
@@ -169,7 +118,7 @@ export async function buildSheets(name: ReportName): Promise<Record<string, Row[
           'Date & Time': new Date(l.createdAt).toLocaleString('en-GB'),
           Action: l.action,
           Entity: l.entity,
-          Project: L.proj(l.projectId),
+          Product: L.proj(l.projectId),
           Description: l.message,
         })),
       }
@@ -234,7 +183,7 @@ export async function exportAllReports() {
 }
 
 interface GanttExportRow {
-  category: 'Project' | 'Deliverable' | 'Milestone' | 'Task'
+  category: 'Product' | 'Stage' | 'Milestone' | 'Task'
   label: string
   sublabel: string
   status: string
@@ -246,11 +195,9 @@ interface GanttExportRow {
 
 function buildGanttExportData(
   project: Project,
-  deliverables: Workstream[],
-  pos: PoRecord[],
+  stages: Workstream[],
   milestones: Milestone[],
   tasks: Task[],
-  supName: (id: string) => string,
 ) {
   const today = todayStr()
   const projStart = project.startDate || project.createdAt?.slice(0, 10) || today
@@ -258,9 +205,9 @@ function buildGanttExportData(
 
   const items: GanttExportRow[] = [
     {
-      category: 'Project',
-      label: `HRS ${project.code}${project.deviceName ? ` · ${project.deviceName}` : ''}`,
-      sublabel: `${project.hwType || 'FT'}${project.atePlatform ? ` · ${project.atePlatform}` : ''}`,
+      category: 'Product',
+      label: `${project.name}${project.packageType ? ` · ${project.packageType}` : ''}`,
+      sublabel: project.code,
       status: project.status,
       progress: project.progress,
       startDate: projStart,
@@ -268,18 +215,15 @@ function buildGanttExportData(
     },
   ]
 
-  for (const w of deliverables) {
-    const po = pos.find((r) => r.workstreamId === w.id || (!r.workstreamId && r.supplierId === w.supplierId))
-    const dStart = po?.issueDate || w.startDate || projStart
-    const dEndRaw = po?.actualDelivery || po?.expectedDelivery || w.targetDate || projEnd
+  for (const w of stages) {
+    const dStart = w.startDate || projStart
+    const dEndRaw = w.actualDate || w.targetDate || projEnd
     const dEnd = dEndRaw >= dStart ? dEndRaw : dStart
-    const hwStatus = po?.deliveryStatus || 'Not Started'
-    const delivName = w.category === 'Others' && w.name && w.name !== 'Others' ? `Others (${w.name})` : w.name || w.category
     items.push({
-      category: 'Deliverable',
-      label: `├─ ${delivName}${w.mpn ? ` (${w.mpn})` : ''}`,
-      sublabel: supName(w.supplierId || po?.supplierId || '') || '—',
-      status: `${w.status} / HW: ${hwStatus}`,
+      category: 'Stage',
+      label: `├─ ${w.category}${w.name && w.name !== w.category ? `: ${w.name}` : ''}`,
+      sublabel: w.remarks || w.category,
+      status: w.status,
       progress: w.progress,
       startDate: dStart,
       endDate: dEnd,
@@ -376,7 +320,7 @@ export function exportProjectGanttPng(project: Project, items: GanttExportRow[])
   ctx.fillRect(0, 0, width, 48)
   ctx.fillStyle = '#ffffff'
   ctx.font = 'bold 16px Inter, system-ui, sans-serif'
-  ctx.fillText(`NPI / HRS ${project.code}${project.deviceName ? ` · ${project.deviceName}` : ''} — Master Gantt Chart`, 20, 30)
+  ctx.fillText(`${project.name}${project.packageType ? ` · ${project.packageType}` : ''} [${project.code}] — Master Gantt Chart`, 20, 30)
 
   const leftColsW = 470
   const chartX = leftColsW
@@ -437,8 +381,8 @@ export function exportProjectGanttPng(project: Project, items: GanttExportRow[])
     ctx.lineTo(width, y + rowH)
     ctx.stroke()
 
-    ctx.fillStyle = item.category === 'Project' ? '#1e3a8a' : '#1e293b'
-    ctx.font = item.category === 'Project' ? 'bold 12px Inter, system-ui, sans-serif' : '12px Inter, system-ui, sans-serif'
+    ctx.fillStyle = item.category === 'Product' ? '#1e3a8a' : '#1e293b'
+    ctx.font = item.category === 'Product' ? 'bold 12px Inter, system-ui, sans-serif' : '12px Inter, system-ui, sans-serif'
     ctx.fillText(item.label.slice(0, 38), 16, y + 20)
 
     ctx.fillStyle = '#64748b'
@@ -457,9 +401,9 @@ export function exportProjectGanttPng(project: Project, items: GanttExportRow[])
         ? '#10b981'
         : item.status.includes('Delayed')
           ? '#ef4444'
-          : item.category === 'Project'
+          : item.category === 'Product'
             ? '#2563eb'
-            : item.category === 'Deliverable'
+            : item.category === 'Stage'
               ? '#6366f1'
               : item.category === 'Milestone'
                 ? '#f59e0b'
@@ -509,74 +453,51 @@ export function exportProjectGanttPng(project: Project, items: GanttExportRow[])
 }
 
 export async function exportSingleProjectReport(projectId: string) {
-  const [project, deliverables, tasks, milestones, quotations, pets, pos, logs, links, suppliers] = await Promise.all([
+  const [project, stages, tasks, milestones, logs] = await Promise.all([
     db.projects.get(projectId),
     db.workstreams.where('projectId').equals(projectId).toArray(),
     db.tasks.where('projectId').equals(projectId).toArray(),
     db.milestones.where('projectId').equals(projectId).toArray(),
-    db.quotations.where('projectId').equals(projectId).toArray(),
-    db.petRecords.where('projectId').equals(projectId).toArray(),
-    db.poRecords.where('projectId').equals(projectId).toArray(),
     db.activityLogs.where('projectId').equals(projectId).toArray(),
-    db.projectSuppliers.where('projectId').equals(projectId).toArray(),
-    db.suppliers.toArray(),
   ])
   if (!project) return
 
-  const supMap = new Map(suppliers.map((s) => [s.id, s.name]))
-  const wsMap = new Map(deliverables.map((w) => [w.id, w.name || w.category]))
-  const supName = (id: string) => supMap.get(id) ?? ''
+  const wsMap = new Map(stages.map((w) => [w.id, w.name || w.category]))
   const wsName = (id: string) => wsMap.get(id) ?? ''
 
-  const linkedSuppliers = links
-    .map((l) => suppliers.find((s) => s.id === l.supplierId))
-    .filter((s): s is NonNullable<typeof s> => !!s)
-
-  const ganttData = buildGanttExportData(project, deliverables, pos, milestones, tasks, supName)
+  const ganttData = buildGanttExportData(project, stages, milestones, tasks)
 
   const sheets: Record<string, Row[]> = {
-    'Project Overview': [
+    'Product Overview': [
       {
-        'HRS Number': project.code,
-        'HW Type': project.hwType || 'FT',
-        'Device Name': project.deviceName,
-        'ATE Platform': project.atePlatform,
+        'Project Code': project.code,
+        'Product Name': project.name,
+        'Package Type': project.packageType,
+        Priority: project.priority,
         Status: project.status,
         'Progress %': project.progress,
         'Start Date': project.startDate,
-        'HW Required Date': project.baselineDate,
+        'Target Date': project.baselineDate,
         Description: project.description,
       },
     ],
     'Gantt Chart': ganttData.sheetRows,
-    'Deliverables & Commercial': deliverables.map((w) => {
-      const q = quotations.find((r) => r.workstreamId === w.id || (!r.workstreamId && r.supplierId === w.supplierId))
-      const pet = pets.find((r) => r.workstreamId === w.id || (!r.workstreamId && r.supplierId === w.supplierId))
-      const po = pos.find((r) => r.workstreamId === w.id || (!r.workstreamId && r.supplierId === w.supplierId))
-      return {
-        'HRS Number': project.code,
-        Deliverable: w.name || w.category,
-        MPN: w.mpn ?? '',
-        Supplier: supName(w.supplierId || q?.supplierId || pet?.supplierId || po?.supplierId || ''),
-        Status: w.status,
-        'Progress %': w.progress,
-        'Quotation Number': q?.number ?? '',
-        'PET Number': pet?.reference ?? '',
-        'PO Number': po?.number ?? '',
-        'PO Issue Date': po?.issueDate ?? '',
-        'PO Amount': po?.amount ?? '',
-        'PO Currency': po?.currency ?? '',
-        'Expected Delivery': po?.expectedDelivery ?? '',
-        'Actual Delivery': po?.actualDelivery ?? '',
-        'Hardware Status': po?.deliveryStatus ?? 'Not Started',
-        Remarks: po?.remarks || pet?.remarks || q?.remarks || w.remarks || '',
-      }
-    }),
+    'Product Stages': stages.map((w) => ({
+      'Project Code': project.code,
+      Product: project.name,
+      Category: w.category,
+      Stage: w.name || w.category,
+      Status: w.status,
+      'Progress %': w.progress,
+      'Start Date': w.startDate,
+      'Target Date': w.targetDate,
+      'Actual Date': w.actualDate,
+      Remarks: w.remarks,
+    })),
     Tasks: tasks.map((t) => ({
       Task: t.name,
-      'HRS Number': project.code,
-      Deliverable: wsName(t.workstreamId),
-      Supplier: supName(t.supplierId),
+      Product: project.name,
+      Stage: wsName(t.workstreamId),
       Start: t.startDate,
       Due: t.dueDate,
       Completed: t.completionDate,
@@ -586,33 +507,23 @@ export async function exportSingleProjectReport(projectId: string) {
     })),
     Milestones: milestones.map((m) => ({
       Milestone: m.name,
-      'HRS Number': project.code,
+      Product: project.name,
       Description: m.description,
       Target: m.targetDate,
       Actual: m.actualDate,
       Status: m.status,
       Remarks: m.remarks,
     })),
-    Suppliers: linkedSuppliers.map((s) => ({
-      Supplier: s.name,
-      Category: s.category,
-      Contact: s.contactPerson,
-      Email: s.email,
-      Phone: s.phone,
-      Location: s.location,
-      Deliverables: deliverables.filter((w) => w.supplierId === s.id).map((w) => w.name || w.category).join(', '),
-      Remarks: s.remarks,
-    })),
     'Activity History': [...logs]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((l) => ({
         'Date & Time': new Date(l.createdAt).toLocaleString('en-GB'),
         Action: l.action,
-        Entity: l.entity === 'Workstream' ? 'Deliverable' : l.entity,
+        Entity: l.entity === 'Workstream' ? 'Stage' : l.entity,
         Description: l.message,
       })),
   }
 
-  writeWorkbook(sheets, `npi-hrs-${project.code}-${stamp()}.xlsx`)
+  writeWorkbook(sheets, `pm-${project.code}-${stamp()}.xlsx`)
   exportProjectGanttPng(project, ganttData.items)
 }

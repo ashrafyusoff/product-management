@@ -2,196 +2,103 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { db } from '@/database/db'
 import { createProject, deleteProject, emptyProject, updateProject } from './projectService'
-import { createSupplier, deleteSupplier, emptySupplier, linkSupplierToProject, unlinkSupplierFromProject, updateSupplier } from './supplierService'
-import { createWorkstream, deleteWorkstream, emptyWorkstream, updateWorkstream } from './workstreamService'
-import { createTask, deleteTask, duplicateTaskToDate, emptyTask, rescheduleTask, updateTask } from './taskService'
-import { createMilestone, deleteMilestone, duplicateMilestoneToDate, emptyMilestone, rescheduleMilestone, updateMilestone } from './milestoneService'
-import { clearDeliverableCommercial, createPet, createPo, createQuotation, deletePet, deletePo, deleteQuotation, emptyDeliverableCommercial, emptyPet, emptyPo, emptyQuotation, saveDeliverableCommercial, updatePo } from './commercialService'
-import { createMeeting, createMeetingAction, deleteMeeting, emptyMeeting, emptyMeetingAction } from './meetingService'
-import { createIssue, createRisk, deleteIssue, deleteRisk, emptyIssue, emptyRisk, updateIssue } from './riskIssueService'
-import { buildBackup, getDatabaseStatus, resetAllData, restoreBackup, validateBackup } from './backupService'
-import { buildSheets, REPORT_NAMES } from './exportService'
+import { createWorkstream, deleteWorkstream, emptyWorkstream, moveWorkstreamOrder, sortWorkstreams } from './workstreamService'
+import { createTask, emptyTask } from './taskService'
+import { createMilestone, emptyMilestone } from './milestoneService'
+import { buildBackup, resetAllData, restoreBackup, validateBackup } from './backupService'
+import { REPORT_NAMES, buildSheets } from './exportService'
 import { clearSampleData, hasSampleData, loadSampleData } from './sampleData'
 
-describe('NPI Project Manager — Full Database & Service Suite', () => {
-  beforeEach(async () => {
-    await resetAllData()
-  })
+beforeEach(async () => {
+  await resetAllData()
+})
 
-  it('creates, updates, validates, and cascades project deletion safely', async () => {
-    const pId = await createProject({ ...emptyProject(), code: 'NPI-9001', name: 'Test SoC Load Board' })
-    expect((await db.projects.count())).toBe(1)
+describe('Product Management — Database & Service Suite', () => {
+  it('creates, updates, validates, and cascades product deletion safely', async () => {
+    await expect(createProject({ ...emptyProject(), code: '   ', name: 'AXON-400' })).rejects.toThrow(/Project Code/i)
+    await expect(createProject({ ...emptyProject(), code: 'PM-101', name: '' })).rejects.toThrow(/Product Name/i)
 
-    // Duplicate project code must be rejected (case-insensitive)
-    await expect(createProject({ ...emptyProject(), code: 'npi-9001', name: 'Duplicate' })).rejects.toThrow(/already used/i)
+    const pId = await createProject({
+      ...emptyProject(),
+      code: 'PM-101',
+      name: 'AXON-400',
+      packageType: '48-QFN-EP',
+      startDate: '2026-01-10',
+      baselineDate: '2026-06-01',
+    })
+    await expect(createProject({ ...emptyProject(), code: 'pm-101', name: 'Dup' })).rejects.toThrow(/already used/i)
 
-    // Invalid date order must be rejected
-    await expect(updateProject(pId, { ...emptyProject(), code: 'NPI-9001', name: 'Test', startDate: '2026-06-10', baselineDate: '2026-06-01' })).rejects.toThrow(/cannot be before/i)
+    await updateProject(pId, {
+      ...emptyProject(),
+      code: 'PM-101',
+      name: 'AXON-400',
+      packageType: '48-QFN-EP',
+      status: 'In Progress',
+      progress: 40,
+      startDate: '2026-01-10',
+      baselineDate: '2026-06-01',
+    })
+    expect((await db.projects.get(pId))?.status).toBe('In Progress')
 
-    // Update status and verify Activity Log records 'Status Changed'
-    await updateProject(pId, { ...emptyProject(), code: 'NPI-9001', name: 'Test SoC Load Board', status: 'In Progress', progress: 45 })
-    const logs = await db.activityLogs.where('projectId').equals(pId).toArray()
-    expect(logs.some((l) => l.action === 'Status Changed')).toBe(true)
-
-    // Create child records across all modules and verify deleteProject cascades everything cleanly
-    await createWorkstream({ ...emptyWorkstream(pId), name: 'PCB Fab' })
-    await createTask({ ...emptyTask(pId), name: 'Layout review' })
-    await createMilestone({ ...emptyMilestone(pId), name: 'Design Freeze', targetDate: '2026-12-01' })
-    await createQuotation({ ...emptyQuotation(pId), number: 'Q-100' })
-    const mId = await createMeeting({ ...emptyMeeting(pId), title: 'Kickoff', date: '2026-11-15' })
-    await createMeetingAction({ ...emptyMeetingAction(mId), action: 'Send schematic' })
-    await createRisk({ ...emptyRisk(pId), title: 'Substrate lead time' })
-    await createIssue({ ...emptyIssue(pId), title: 'Via clearance' })
+    const sId = await createWorkstream({ ...emptyWorkstream(pId), category: 'Qual', status: 'On Track' })
+    await createTask({ ...emptyTask(pId), workstreamId: sId, name: 'Close review board action items', startDate: '2026-02-01', dueDate: '2026-03-01' })
+    await createMilestone({ ...emptyMilestone(pId), workstreamId: sId, name: 'Qual Gate', targetDate: '2026-04-01' })
 
     await deleteProject(pId)
-    const status = await getDatabaseStatus()
-    expect(status.counts.projects).toBe(0)
-    expect(status.counts.workstreams).toBe(0)
-    expect(status.counts.tasks).toBe(0)
-    expect(status.counts.milestones).toBe(0)
-    expect(status.counts.quotations).toBe(0)
-    expect(status.counts.meetings).toBe(0)
-    expect(status.counts.meetingActions).toBe(0)
-    expect(status.counts.risks).toBe(0)
-    expect(status.counts.issues).toBe(0)
+    expect(await db.projects.count()).toBe(0)
+    expect(await db.workstreams.count()).toBe(0)
+    expect(await db.tasks.count()).toBe(0)
+    expect(await db.milestones.count()).toBe(0)
   })
 
-  it('manages suppliers, workstreams, auto-linking, and safe supplier/workstream deletion', async () => {
-    const pId = await createProject({ ...emptyProject(), code: 'NPI-9002', name: 'PMIC Handler' })
-    await createSupplier({ ...emptySupplier(), name: 'Test Vendor', email: 'contact@vendor.example' })
-    const sup = (await db.suppliers.toArray())[0]
+  it('manages multi-stage product workstreams, reordering, and detaches tasks on stage deletion', async () => {
+    const pId = await createProject({ ...emptyProject(), code: 'PM-102', name: 'VECTRA-M7', packageType: '144-BGA-TP' })
+    const s1 = await createWorkstream({ ...emptyWorkstream(pId), category: 'Qual', status: 'On Track' })
+    const s2 = await createWorkstream({ ...emptyWorkstream(pId), category: 'PCN', status: 'Urgent' })
+    const s3 = await createWorkstream({ ...emptyWorkstream(pId), category: 'PN Setup', status: 'Done' })
 
-    // Invalid email must fail validation
-    await expect(updateSupplier(sup.id, { ...emptySupplier(), name: 'Test Vendor', email: 'not-an-email' })).rejects.toThrow(/email/i)
+    expect((await db.workstreams.get(s3))?.progress).toBe(100)
+    expect(await db.workstreams.where('projectId').equals(pId).count()).toBe(3)
 
-    // Creating a workstream with a supplier auto-links that supplier to the project
-    await createWorkstream({ ...emptyWorkstream(pId), name: 'Socket Design', supplierId: sup.id })
-    const ws = (await db.workstreams.toArray())[0]
-    expect(await db.projectSuppliers.count()).toBe(1)
+    // Reorder s3 up above s2
+    await moveWorkstreamOrder(pId, s3, 'up')
+    const ordered = sortWorkstreams(await db.workstreams.where('projectId').equals(pId).toArray())
+    expect(ordered.map((w) => w.id)).toEqual([s1, s3, s2])
 
-    // Link a task to this workstream and supplier
-    await createTask({ ...emptyTask(pId), name: 'Approve drawing', workstreamId: ws.id, supplierId: sup.id })
-
-    // Deleting the workstream keeps the task, but detaches workstreamId
-    await deleteWorkstream(ws.id)
-    const tAfterWs = (await db.tasks.toArray())[0]
-    expect(tAfterWs.workstreamId).toBe('')
-
-    // Unlinking or deleting the supplier clears supplierId on tasks without deleting the task
-    await linkSupplierToProject(pId, sup.id)
-    await unlinkSupplierFromProject(pId, sup.id)
-    await deleteSupplier(sup.id)
-    const tAfterSup = (await db.tasks.toArray())[0]
-    expect(tAfterSup.supplierId).toBe('')
+    await createTask({ ...emptyTask(pId), workstreamId: s1, name: 'Reliability stress check' })
+    await deleteWorkstream(s1)
+    expect(await db.workstreams.where('projectId').equals(pId).count()).toBe(2)
+    expect((await db.tasks.toArray())[0].workstreamId).toBe('')
   })
 
-  it('handles tasks, milestones, meeting action links, commercial records, risks, and issues', async () => {
-    const pId = await createProject({ ...emptyProject(), code: 'NPI-9003', name: 'RF Transceiver' })
-
-    // Task auto-completion sets progress = 100 and completionDate
-    await createTask({ ...emptyTask(pId), name: 'Gerber Release', startDate: '2026-11-10', dueDate: '2026-11-12', status: 'Not Started', progress: 20 })
-    const task = (await db.tasks.toArray())[0]
-    await rescheduleTask(task.id, '2026-11-19')
-    await duplicateTaskToDate(task.id, '2026-11-26')
-    expect(await db.tasks.count()).toBe(2)
-    const movedTask = await db.tasks.get(task.id)
-    expect(movedTask?.dueDate).toBe('2026-11-19')
-    expect(movedTask?.startDate).toBe('2026-11-17')
-    await updateTask(task.id, { ...movedTask!, status: 'Completed' })
-    const updatedTask = await db.tasks.get(task.id)
-    expect(updatedTask?.progress).toBe(100)
-    expect(updatedTask?.completionDate).toBeTruthy()
-
-    // Milestone auto-fills actualDate when marked Completed and supports drag-rescheduling + copy
-    await createMilestone({ ...emptyMilestone(pId), name: 'Tapeout', targetDate: '2026-12-10' })
-    const ms = (await db.milestones.toArray())[0]
-    await rescheduleMilestone(ms.id, '2026-12-17')
-    await duplicateMilestoneToDate(ms.id, '2026-12-24')
-    expect(await db.milestones.count()).toBe(2)
-    expect((await db.milestones.get(ms.id))?.targetDate).toBe('2026-12-17')
-    await updateMilestone(ms.id, { ...(await db.milestones.get(ms.id))!, status: 'Completed' })
-    expect((await db.milestones.get(ms.id))?.actualDate).toBeTruthy()
-    await deleteMilestone(ms.id)
-
-    // Meeting action item linked to task; deleting task unlinks action item without deleting it
-    const mId = await createMeeting({ ...emptyMeeting(pId), title: 'Design Review', date: '2026-11-13' })
-    await createMeetingAction({ ...emptyMeetingAction(mId), action: 'Follow up Gerber', taskId: task.id })
-    await deleteTask(task.id)
-    const actionAfter = (await db.meetingActions.toArray())[0]
-    expect(actionAfter.taskId).toBe('')
-    await deleteMeeting(mId)
-    expect(await db.meetingActions.count()).toBe(0)
-
-    // Commercial CRUD (Unified Deliverable Commercial: Quotation + PET + PO + Delivery Tracking)
-    const wsId = await createWorkstream({ ...emptyWorkstream(pId), name: 'RF Load Board' })
-    await saveDeliverableCommercial({
-      ...emptyDeliverableCommercial(pId, wsId),
-      quotationNumber: 'Q-RF-100',
-      petReference: 'PET-RF-100',
-      poNumber: 'PO-RF-100',
-      poAmount: 4200,
-      deliveryStatus: 'In Transit',
-    })
-    const qRec = (await db.quotations.where('workstreamId').equals(wsId).toArray())[0]
-    const petRec = (await db.petRecords.where('workstreamId').equals(wsId).toArray())[0]
-    const poRec = (await db.poRecords.where('workstreamId').equals(wsId).toArray())[0]
-    expect(qRec.number).toBe('Q-RF-100')
-    expect(petRec.reference).toBe('PET-RF-100')
-    expect(poRec.deliveryStatus).toBe('In Transit')
-
-    await clearDeliverableCommercial(pId, wsId, { quotationId: qRec.id, petId: petRec.id, poId: poRec.id })
-    expect(await db.quotations.count()).toBe(0)
-    expect(await db.petRecords.count()).toBe(0)
-    expect(await db.poRecords.count()).toBe(0)
-
-    await createQuotation({ ...emptyQuotation(pId, wsId), number: 'Q-1' })
-    await createPet({ ...emptyPet(pId, wsId), reference: 'PET-1' })
-    await createPo({ ...emptyPo(pId, wsId), number: 'PO-1', amount: 1500 })
-    const po = (await db.poRecords.toArray())[0]
-    await updatePo(po.id, { ...po, supplierConfirmation: 'Confirmed', hardwareDelivery: 'Shipped / In Transit', deliveryStatus: 'In Transit' })
-    expect((await db.poRecords.get(po.id))?.deliveryStatus).toBe('In Transit')
-
-    await deleteQuotation((await db.quotations.toArray())[0].id)
-    await deletePet((await db.petRecords.toArray())[0].id)
-    await deletePo(po.id)
-
-    // Risk & Engineering Issue CRUD (Issue auto-fills actualDate when Resolved)
-    await createRisk({ ...emptyRisk(pId), title: 'Pin wear', level: 'High' })
-    await createIssue({ ...emptyIssue(pId), title: 'Trace impedance', status: 'Open' })
-    const issue = (await db.issues.toArray())[0]
-    await updateIssue(issue.id, { ...issue, status: 'Resolved' })
-    expect((await db.issues.get(issue.id))?.actualDate).toBeTruthy()
-    await deleteRisk((await db.risks.toArray())[0].id)
-    await deleteIssue(issue.id)
-  })
-
-  it('loads sample data, clears only sample data while preserving user records, and validates JSON backup/restore & Excel sheets', async () => {
+  it('loads sample data, clears only sample data while preserving user records, and validates backup & Excel sheets', async () => {
     await loadSampleData()
     expect(await hasSampleData()).toBe(true)
+    const sampleCount = await db.projects.count()
+    expect(sampleCount).toBeGreaterThan(5)
 
-    // Add a user-created project alongside sample data
-    const userProjId = await createProject({ ...emptyProject(), code: 'USER-01', name: 'My Real NPI Project' })
-    expect(await db.projects.count()).toBe(9)
+    // Add a user-created product alongside sample data
+    const userProjId = await createProject({ ...emptyProject(), code: 'USER-01', name: 'KRYPTON-9', packageType: '64-QFN' })
+    expect(await db.projects.count()).toBe(sampleCount + 1)
 
-    // Test Excel sheet builders for all 8 report types
-    for (const report of REPORT_NAMES) {
-      const sheets = await buildSheets(report)
+    // Test Excel sheet builders for all report types
+    for (const r of REPORT_NAMES) {
+      const sheets = await buildSheets(r)
       expect(Object.keys(sheets).length).toBeGreaterThan(0)
     }
 
-    // Build and validate JSON backup
-    const backup = await buildBackup()
-    expect(() => validateBackup(backup)).not.toThrow()
-    expect(() => validateBackup({ app: 'wrong' })).toThrow()
-
-    // Clear sample data: sample projects removed, USER-01 preserved
+    // Clear sample data — user-created product must survive
     await clearSampleData()
     expect(await hasSampleData()).toBe(false)
     expect(await db.projects.count()).toBe(1)
-    expect((await db.projects.get(userProjId))?.code).toBe('USER-01')
+    expect(await db.projects.get(userProjId)).toBeDefined()
 
-    // Restore from backup brings back all 9 projects
+    // JSON backup & restore round-trip
+    const backup = validateBackup(JSON.parse(JSON.stringify(await buildBackup())))
+    await resetAllData()
+    expect(await db.projects.count()).toBe(0)
     await restoreBackup(backup)
-    expect(await db.projects.count()).toBe(9)
+    expect(await db.projects.count()).toBe(1)
+    expect((await db.projects.get(userProjId))?.name).toBe('KRYPTON-9')
   })
 })

@@ -1,5 +1,5 @@
 import { Pencil, Trash2 } from 'lucide-react'
-import { NON_NPI_TASK_STATUSES, PRIORITIES, TASK_STATUSES, type Priority, type Project, type Supplier, type Task, type TaskStatus, type Workstream } from '@/types'
+import { NON_NPI_TASK_STATUSES, PRIORITIES, TASK_STATUSES, type Priority, type Project, type Task, type TaskStatus, type Workstream } from '@/types'
 import { Badge, Button } from '@/components/ui'
 import { InlineStatusSelect } from '@/pages/ProjectsPage'
 import { updateTask } from '@/services/taskService'
@@ -22,21 +22,23 @@ interface Props {
   tasks: Task[]
   projects: Project[]
   workstreams: Workstream[]
-  suppliers: Supplier[]
   showProject?: boolean
   onEdit: (t: Task) => void
   onDelete: (t: Task) => void
 }
 
-export function TaskTable({ tasks, projects, workstreams, suppliers, showProject = true, onEdit, onDelete }: Props) {
-  const proj = (id: string) => projects.find((p) => p.id === id)?.code ?? '—'
+export function TaskTable({ tasks, projects, workstreams, showProject = true, onEdit, onDelete }: Props) {
+  const proj = (id: string) => {
+    const p = projects.find((x) => x.id === id)
+    if (!p) return '—'
+    return p.packageType && !p.isNonNpi ? `${p.name} (${p.packageType})` : p.name || p.code
+  }
   const ws = (id: string) => {
     const w = workstreams.find((x) => x.id === id)
     if (!w) return '—'
-    return w.category === 'Others' && w.name !== 'Others' ? `Others (${w.name})` : w.name || w.category
+    return w.name && w.name !== w.category ? `${w.category}: ${w.name}` : w.category
   }
-  const sup = (id: string) => suppliers.find((s) => s.id === id)?.name ?? '—'
-  const head = [...(showProject ? ['HRS / Project'] : []), 'Task', 'Deliverable', 'Supplier', 'Start', 'Due', 'Priority', 'Status', 'Actions']
+  const head = [...(showProject ? ['Product'] : []), 'Task', 'Stage', 'Start', 'Due', 'Priority', 'Status', 'Actions']
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -48,11 +50,13 @@ export function TaskTable({ tasks, projects, workstreams, suppliers, showProject
             <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50">
               {showProject && <td className="px-3 py-2.5 font-medium text-primary whitespace-nowrap">{proj(t.projectId)}</td>}
               <td className="px-3 font-medium min-w-[200px]">{t.name}</td>
-              <td className="px-3 text-slate-500">{ws(t.workstreamId)}</td>
-              <td className="px-3">{sup(t.supplierId)}</td>
+              <td className="px-3 text-slate-500 whitespace-nowrap">{ws(t.workstreamId)}</td>
               <td className="px-3 whitespace-nowrap">{formatDate(t.startDate)}</td>
               <td className="px-3 whitespace-nowrap">
-                <div className={isOverdueTask(t) ? 'text-red-600 font-medium' : ''}>{formatDate(t.dueDate)}</div>
+                <div className={isOverdueTask(t) ? 'text-red-600 font-medium' : ''}>
+                  {formatDate(t.dueDate)}
+                  {t.startTime && t.endTime && <span className="ml-1 text-[11px] text-slate-400">{t.startTime}–{t.endTime}</span>}
+                </div>
                 <DeadlineBadge task={t} />
               </td>
               <td className="px-3">

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NON_NPI_TASK_STATUSES, PRIORITIES, TASK_STATUSES, type Project, type Supplier, type Task, type Workstream } from '@/types'
+import { NON_NPI_TASK_STATUSES, PRIORITIES, TASK_STATUSES, type Project, type Task, type Workstream } from '@/types'
 import { createTask, emptyTask, updateTask, type TaskInput } from '@/services/taskService'
 import { useTable } from '@/hooks/useTable'
 import { todayStr } from '@/utils/helpers'
@@ -47,7 +47,6 @@ function Body({
 }) {
   const projects = useTable<Project>('projects') ?? []
   const workstreams = useTable<Workstream>('workstreams') ?? []
-  const suppliers = useTable<Supplier>('suppliers') ?? []
   const [form, setForm] = useState<TaskInput>(() =>
     task
       ? { ...task, startDate: task.startDate || task.createdAt?.slice(0, 10) || todayStr() }
@@ -61,25 +60,18 @@ function Body({
   const selectableProjects = nonNpiOnly ? projects.filter((p) => !!p.isNonNpi) : projects
   const statusOptions = isNonNpiProject ? NON_NPI_TASK_STATUSES : TASK_STATUSES
 
-  const selectedDeliverable = workstreams.find((w) => w.id === form.workstreamId)
-  const effectiveSupplierId = selectedDeliverable ? selectedDeliverable.supplierId : form.supplierId
-  const supplierName = suppliers.find((s) => s.id === effectiveSupplierId)?.name ?? '— None (set in Deliverable) —'
-
   function handleProjectChange(projectId: string) {
     setForm((f) => ({
       ...f,
       projectId,
       workstreamId: '',
-      supplierId: '',
     }))
   }
 
-  function handleDeliverableChange(workstreamId: string) {
-    const ws = workstreams.find((w) => w.id === workstreamId)
+  function handleStageChange(workstreamId: string) {
     setForm((f) => ({
       ...f,
       workstreamId,
-      supplierId: ws?.supplierId || '',
     }))
   }
 
@@ -91,7 +83,6 @@ function Body({
         ...form,
         startDate: form.startDate || todayStr(),
         assignee: '',
-        supplierId: effectiveSupplierId,
       }
       if (task) await updateTask(task.id, payload)
       else await createTask(payload)
@@ -106,38 +97,33 @@ function Body({
       <FormError message={error} />
       <Field label="Task Name" required><Input value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label={nonNpiOnly ? 'Non-NPI Work' : 'Project (HRS / Non-NPI)'} required>
+        <Field label={nonNpiOnly ? 'Side-Quest' : 'Product / Workstream'} required>
           <Select
             value={form.projectId}
             onChange={(e) => handleProjectChange(e.target.value)}
             options={[
-              { value: '', label: nonNpiOnly ? 'Select Non-NPI Work…' : 'Select project…' },
+              { value: '', label: nonNpiOnly ? 'Select Side-Quest…' : 'Select product…' },
               ...selectableProjects.map((p) => ({
                 value: p.id,
                 label: p.isNonNpi
                   ? `${p.code} – ${p.name}`
-                  : `${p.code}${p.deviceName ? ` – ${p.deviceName}` : ''}`,
+                  : `${p.name}${p.packageType ? ` (${p.packageType})` : ''} [${p.code}]`,
               })),
             ]}
           />
         </Field>
         {!isNonNpiProject && (
-          <Field label="Deliverable">
+          <Field label="Product Stage">
             <Select
               value={form.workstreamId}
-              onChange={(e) => handleDeliverableChange(e.target.value)}
+              onChange={(e) => handleStageChange(e.target.value)}
               options={[
                 { value: '', label: '— None —' },
                 ...workstreams
                   .filter((w) => w.projectId === form.projectId)
-                  .map((w) => ({ value: w.id, label: w.category === 'Others' && w.name !== 'Others' ? `Others (${w.name})` : w.name || w.category })),
+                  .map((w) => ({ value: w.id, label: w.name && w.name !== w.category ? `${w.category}: ${w.name}` : w.category })),
               ]}
             />
-          </Field>
-        )}
-        {!isNonNpiProject && (
-          <Field label="Supplier (Auto-filled from Deliverable)">
-            <Input value={supplierName} disabled readOnly className="bg-slate-100 text-slate-600 cursor-not-allowed" />
           </Field>
         )}
         <Field label="Priority">

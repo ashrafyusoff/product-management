@@ -18,46 +18,40 @@ export const isArchivedStatus = (status: string) => status === 'Completed' || st
 export const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'] as const
 export type Priority = (typeof PRIORITIES)[number]
 
-export const HW_TYPES = ['FT', 'WT', 'Eng'] as const
-export type HwType = (typeof HW_TYPES)[number]
-
-export const HARDWARE_CATEGORIES = ['PCB', 'Socket', 'Handler Kit', 'Stiffener', 'Probe Card', 'Probe Head', 'Others'] as const
-export type HardwareCategory = (typeof HARDWARE_CATEGORIES)[number] | string
+export const PRODUCT_STAGES = [
+  'Qual',
+  'Sample',
+  'PPAP',
+  'PCN',
+  'Safe Launch',
+  'CMT',
+  'OB conversion',
+  'PN Setup',
+] as const
+export type ProductStageCategory = (typeof PRODUCT_STAGES)[number] | string
 
 export const NON_NPI_CATEGORIES = ['DOE', 'Web Development', 'Process Improvement', 'Automation / Tooling', 'Ad-hoc Task', 'Others'] as const
 export type NonNpiCategory = (typeof NON_NPI_CATEGORIES)[number] | string
 
-export const HARDWARE_STATUSES = ['Not Started', 'Design', 'Fabrication', 'In Delivery', 'Delivered'] as const
-export type HardwareStatus = (typeof HARDWARE_STATUSES)[number]
-
 export const PROGRESS_STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] as const
 
-export const WORKSTREAM_STATUSES = ['Not Started', 'In Progress', 'On Hold', 'Delayed', 'Completed'] as const
-export type WorkstreamStatus = (typeof WORKSTREAM_STATUSES)[number]
+export const STAGE_STATUSES = ['Not Started', 'On Track', 'Watch', 'Risk', 'Urgent', 'On Hold', 'Done', 'Cancelled'] as const
+export type StageStatus = (typeof STAGE_STATUSES)[number]
+export const isStageDone = (status: string) => status === 'Done' || status === 'Completed'
 
-export const TASK_STATUSES = ['Not Started', 'In Progress', 'Waiting for Supplier', 'Under Review', 'Completed', 'Cancelled'] as const
+export const TASK_STATUSES = ['Not Started', 'In Progress', 'Under Review', 'On Hold', 'Completed', 'Cancelled'] as const
 export const NON_NPI_TASK_STATUSES = ['Not Started', 'In Progress', 'On Hold', 'Completed', 'Cancelled'] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number] | (typeof NON_NPI_TASK_STATUSES)[number]
 
 export const MILESTONE_STATUSES = ['Not Started', 'In Progress', 'Completed', 'Delayed'] as const
 export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number]
 
-export const SUPPLIER_CATEGORIES = ['PCB', 'Socket', 'Handler Kit', 'Stiffener', 'Probe Card', 'Probe Head', 'Others'] as const
-
-export interface SupplierContact {
-  contactPerson: string
-  phone: string
-  email: string
-}
-
 export interface Project extends BaseRecord {
-  code: string
-  name: string
+  code: string // Project / Product ID (e.g. PM-101)
+  name: string // Product Name (e.g. AXON-400)
+  packageType: string // Package Type (e.g. 48-QFN-EP)
   isNonNpi?: boolean
   nonNpiCategory?: string
-  hwType?: HwType
-  deviceName: string
-  atePlatform: string
   description: string
   objectives: string
   priority: Priority
@@ -70,43 +64,25 @@ export interface Project extends BaseRecord {
   remarks: string
 }
 
+/** Represents a Product Stage sub-item (Qual, Sample, PPAP, PCN, Safe Launch, CMT, OB conversion, PN Setup) under a Product+Package project. */
 export interface Workstream extends BaseRecord {
   projectId: string
   name: string
-  category: HardwareCategory
-  mpn?: string
-  supplierId: string // '' means none
-  status: WorkstreamStatus
+  category: ProductStageCategory
+  status: StageStatus
   progress: number
+  order?: number
   startDate: string
   targetDate: string
   actualDate: string
   remarks: string
 }
 
-export interface Supplier extends BaseRecord {
-  name: string
-  contactPerson: string
-  email: string
-  phone: string
-  contacts?: SupplierContact[]
-  location: string
-  category: string
-  remarks: string
-}
-
-// Links a supplier to a project (many-to-many). Unique per (projectId, supplierId).
-export interface ProjectSupplier extends BaseRecord {
-  projectId: string
-  supplierId: string
-}
-
 export interface Task extends BaseRecord {
   projectId: string
-  workstreamId: string
+  workstreamId: string // linked Product Stage (Workstream)
   name: string
   assignee: string
-  supplierId: string
   startDate: string
   dueDate: string
   startTime?: string // HH:mm (24h)
@@ -129,96 +105,8 @@ export interface Milestone extends BaseRecord {
   remarks: string
 }
 
-export interface Quotation extends BaseRecord {
-  number: string
-  projectId: string
-  workstreamId?: string // linked Deliverable (Workstream)
-  supplierId: string
-  remarks: string
-}
-
-export interface PetRecord extends BaseRecord {
-  reference: string
-  projectId: string
-  workstreamId?: string // linked Deliverable (Workstream)
-  supplierId: string
-  remarks: string
-}
-
-export interface PrRecord extends BaseRecord {
-  number: string
-  projectId: string
-  supplierId: string
-  submissionDate: string
-  approvalDate: string
-  status: string
-  remarks: string
-}
-
-export interface PoRecord extends BaseRecord {
-  number: string
-  projectId: string
-  workstreamId?: string // linked Deliverable (Workstream)
-  supplierId: string
-  issueDate: string
-  amount: number
-  currency: string
-  expectedDelivery: string
-  actualDelivery: string
-  status?: string
-  supplierConfirmation?: string
-  hardwareDelivery?: string
-  deliveryStatus?: string
-  remarks: string
-}
-
-export interface Meeting extends BaseRecord {
-  title: string
-  projectId: string
-  date: string
-  participants: string
-  summary: string
-  decisions: string
-  remarks: string
-}
-
-export interface MeetingAction extends BaseRecord {
-  meetingId: string
-  action: string
-  assignee: string
-  dueDate: string
-  status: string
-  taskId: string // optional link to a Task
-}
-
-export interface Risk extends BaseRecord {
-  title: string
-  projectId: string
-  description: string
-  probability: string
-  impact: string
-  level: string
-  mitigation: string
-  owner: string
-  status: string
-}
-
-export interface Issue extends BaseRecord {
-  title: string
-  projectId: string
-  workstreamId: string
-  description: string
-  rootCause: string
-  correctiveAction: string
-  responsible: string
-  dateRaised: string
-  targetDate: string
-  actualDate: string
-  status: string
-}
-
 export interface ActivityLog extends BaseRecord {
-  entity: string // e.g. "Project"
+  entity: string // e.g. "Product", "Stage", "Task"
   entityId: string
   projectId: string // '' if not tied to a project
   action: 'Created' | 'Updated' | 'Deleted' | 'Status Changed'

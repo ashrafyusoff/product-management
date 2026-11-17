@@ -161,7 +161,7 @@ export function NonNpiPage() {
             setWorkModalOpen(true)
           }}
         >
-          <Plus className="h-4 w-4" /> Create Non-NPI Work
+          <Plus className="h-4 w-4" /> Create Side-Quest
         </Button>
       </div>
 
@@ -171,12 +171,12 @@ export function NonNpiPage() {
         <Card className="!p-0">
           {nonNpiWorks.length === 0 ? (
             <EmptyState
-              title="No Non-NPI work items yet"
-              hint='Click "Create Non-NPI Work" to track ad-hoc tasks, DOEs, web development, or continuous improvement projects, or load sample data.'
+              title="No Side-Quest items yet"
+              hint='Click "Create Side-Quest" to track ad-hoc tasks, DOEs, web development, or continuous improvement projects, or load sample data.'
               action={
                 <div className="flex gap-2">
                   <Button variant="primary" onClick={() => { setEditingWork(undefined); setWorkModalOpen(true) }}>
-                    Create Non-NPI Work
+                    Create Side-Quest
                   </Button>
                   <Button onClick={() => loadSampleData()}>Load Sample Data</Button>
                 </div>
@@ -227,11 +227,11 @@ export function NonNpiPage() {
 
       {/* Second tab ONLY for Gantt Chart */}
       {tab === 'gantt' && (
-        <Card title="Non-NPI Work & Tasks — Master Gantt Chart">
+        <Card title="Side-Quest & Tasks — Master Gantt Chart">
           {nonNpiWorks.length === 0 ? (
             <EmptyState
-              title="No Non-NPI work items to display"
-              hint="Create a Non-NPI work item or clear filters to view the Gantt chart."
+              title="No Side-Quest items to display"
+              hint="Create a Side-Quest item or clear filters to view the Gantt chart."
             />
           ) : (
             <NonNpiGanttChart works={nonNpiWorks} tasks={tasks} />
@@ -256,7 +256,7 @@ export function NonNpiPage() {
 
       <ConfirmDialog
         open={!!deletingWork}
-        title="Delete Non-NPI work?"
+        title="Delete Side-Quest?"
         onCancel={() => setDeletingWork(undefined)}
         onConfirm={async () => {
           if (!deletingWork) return
@@ -338,7 +338,7 @@ function NonNpiWorkGroup({
               variant="ghost"
               className="!h-6 !px-1.5 text-[11px] text-primary border border-primary/25 bg-primary-soft/50 hover:bg-primary-soft dark:bg-blue-600/25 dark:text-blue-200 dark:border-blue-400/60 dark:hover:bg-blue-600/45 dark:hover:text-white"
               onClick={onAddTask}
-              title="Add task to this Non-NPI work"
+              title="Add task to this Side-Quest"
             >
               <Plus className="h-3 w-3" /> Task
             </Button>
@@ -386,10 +386,10 @@ function NonNpiWorkGroup({
         </td>
         <td className="px-2 py-2.5 whitespace-nowrap">
           <div className="flex gap-1">
-            <Button variant="ghost" size="sm" aria-label="Edit Non-NPI work" onClick={onEditWork}>
+            <Button variant="ghost" size="sm" aria-label="Edit Side-Quest" onClick={onEditWork}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
-            <Button variant="ghost" size="sm" aria-label="Delete Non-NPI work" onClick={onDeleteWork}>
+            <Button variant="ghost" size="sm" aria-label="Delete Side-Quest" onClick={onDeleteWork}>
               <Trash2 className="h-3.5 w-3.5 text-red-500" />
             </Button>
           </div>
@@ -471,7 +471,7 @@ function NonNpiWorkModal({
   onClose: () => void
 }) {
   return (
-    <Modal open={open} onClose={onClose} title={project ? 'Edit Non-NPI Work' : 'Create Non-NPI Work'} wide>
+    <Modal open={open} onClose={onClose} title={project ? 'Edit Side-Quest' : 'Create Side-Quest'} wide>
       <NonNpiWorkFormBody
         key={`${open ? 'open' : 'closed'}-${project?.id ?? 'new'}-${project?.updatedAt ?? ''}`}
         project={project}
@@ -547,7 +547,7 @@ function NonNpiWorkFormBody({
         code: finalCode,
         isNonNpi: true,
         nonNpiCategory: finalCategory,
-        deviceName: finalCode,
+        packageType: finalCategory,
         name: form.name.trim(),
         startDate: form.startDate || todayStr(),
       }
@@ -578,7 +578,7 @@ function NonNpiWorkFormBody({
           </Field>
         )}
         <Field label="Work / Project Title" required>
-          <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Socket Contact Resistance DOE, Tracker Web UI" />
+          <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Yield Correlation DOE, Tracker Web UI" />
         </Field>
         <Field label="Priority">
           <Select options={PRIORITIES} value={form.priority} onChange={(e) => set('priority', e.target.value as Priority)} />
@@ -598,7 +598,7 @@ function NonNpiWorkFormBody({
       </Field>
       <div className="flex justify-end gap-2">
         <Button type="button" onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save Non-NPI Work'}</Button>
+        <Button type="submit" variant="primary" disabled={saving}>{saving ? 'Saving…' : 'Save Side-Quest'}</Button>
       </div>
     </form>
   )
@@ -690,7 +690,7 @@ function NonNpiGanttChart({ works, tasks }: { works: Project[]; tasks: Task[] })
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
         <div className="flex flex-wrap items-center gap-4">
-          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-violet-600" /> Non-NPI Work</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-violet-600" /> Side-Quest</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-500" /> Sub-Task</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Completed</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-red-500" /> Overdue / Delayed</span>

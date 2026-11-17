@@ -3,10 +3,8 @@ import { AppLayout } from '@/layouts/AppLayout'
 import { OverviewPage } from '@/pages/OverviewPage'
 import { ProjectsPage } from '@/pages/ProjectsPage'
 import { ProjectDetailPage } from '@/pages/ProjectDetailPage'
-import { SuppliersPage } from '@/pages/SuppliersPage'
 import { TasksPage } from '@/pages/TasksPage'
 import { NonNpiPage } from '@/pages/NonNpiPage'
-import { CommercialPage } from '@/pages/CommercialPage'
 import { ArchivedPage } from '@/pages/ArchivedPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 
@@ -19,10 +17,8 @@ export default function App() {
           <Route index element={<OverviewPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:id" element={<ProjectDetailPage />} />
-          <Route path="suppliers" element={<SuppliersPage />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="non-npi" element={<NonNpiPage />} />
-          <Route path="commercial" element={<CommercialPage />} />
           <Route path="archived" element={<ArchivedPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<OverviewPage />} />

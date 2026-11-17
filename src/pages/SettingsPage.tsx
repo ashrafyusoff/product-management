@@ -28,42 +28,38 @@ import { todayStr } from '@/utils/helpers'
 import { errorMessage } from '@/utils/validation'
 
 const LABELS: Record<string, string> = {
-  projects: 'Projects', workstreams: 'Deliverables', suppliers: 'Suppliers', projectSuppliers: 'Project Suppliers', tasks: 'Tasks',
-  milestones: 'Milestones', quotations: 'Quotations', petRecords: 'PET Records', poRecords: 'PO Records',
-  activityLogs: 'Activity Logs',
+  projects: 'Products', workstreams: 'Product Stages', tasks: 'Tasks',
+  milestones: 'Milestones', activityLogs: 'Activity Logs',
 }
 const VISIBLE_TABLES = Object.keys(LABELS) as (keyof typeof LABELS)[]
 
 const FILTER_STORAGE_KEYS = [
-  'npi.overview.hwType',
-  'npi.overview.hwRequired',
-  'npi.overview.leftWidgetTab',
-  'npi.overview.radarFilter',
+  'npi.overview.stageFilter',
+  'npi.overview.targetFilter',
   'npi.thisWeek.sortBy',
   'npi.thisWeek.priorityFilter',
   'npi.calendar.weeksToShow',
+  'npi.calendar.viewMode',
   'npi.calendar.filterProject',
   'npi.projects.search',
-  'npi.projects.hwType',
+  'npi.projects.stageFilter',
   'npi.projects.status',
   'npi.projects.sort',
   'npi.projects.collapsedIds',
-  'npi.tasks.tab',
+  'npi.tasks.section',
+  'npi.tasks.view',
   'npi.tasks.search',
-  'npi.tasks.projectId',
-  'npi.tasks.status',
-  'npi.tasks.priority',
-  'npi.suppliers.tab',
-  'npi.suppliers.search',
-  'npi.suppliers.category',
-  'npi.suppliers.expandedContacts',
+  'npi.tasks.fProject',
+  'npi.tasks.fStatus',
+  'npi.tasks.fPriority',
+  'npi.tasks.onlyOverdue',
   'npi.nonnpi.tab',
   'npi.nonnpi.search',
   'npi.nonnpi.categoryFilter',
   'npi.nonnpi.statusFilter',
   'npi.nonnpi.collapsedIds',
-  'npi.archived.tab',
   'npi.archived.search',
+  'npi.archived.stageFilter',
   'npi.archived.status',
   'npi.archived.collapsedIds',
 ]
@@ -87,14 +83,13 @@ export function SettingsPage() {
   // Synced workspace preferences
   const [weeksToShow, setWeeksToShow] = usePersistedState<number>('npi.calendar.weeksToShow', 4)
   const [thisWeekSortBy, setThisWeekSortBy] = usePersistedState<'priority' | 'due'>('npi.thisWeek.sortBy', 'priority')
-  const [leftWidgetTab, setLeftWidgetTab] = usePersistedState<'radar' | 'notes'>('npi.overview.leftWidgetTab', 'radar')
   const [quickNotes, setQuickNotes] = usePersistedState<QuickNoteItem[]>('npi.overview.quickNotes', [])
 
   // Re-run whenever any table changes so counts stay live
   const status = useLiveQuery(
     async () => {
       const today = todayStr()
-      const [dbStat, sample, projects, workstreams, tasks, milestones, pos, projectSuppliers, suppliers, meetings, meetingActions] =
+      const [dbStat, sample, projects, workstreams, tasks, milestones] =
         await Promise.all([
           getDatabaseStatus(),
           hasSampleData(),
@@ -102,21 +97,11 @@ export function SettingsPage() {
           db.workstreams.toArray(),
           db.tasks.toArray(),
           db.milestones.toArray(),
-          db.poRecords.toArray(),
-          db.projectSuppliers.toArray(),
-          db.suppliers.toArray(),
-          db.meetings.toArray(),
-          db.meetingActions.toArray(),
         ])
 
-      const activeNpi = projects.filter((p) => !p.isNonNpi && !isArchivedStatus(p.status))
-      const activeNpiIds = new Set(activeNpi.map((p) => p.id))
-      const activeDeliverables = workstreams.filter((w) => activeNpiIds.has(w.projectId))
-      const poByWs = new Set(pos.filter((r) => !!r.number && !!r.workstreamId).map((r) => r.workstreamId))
-
-      const missingBaselineCount = activeNpi.filter((p) => !p.baselineDate).length
-      const unassignedSupplierDeliverables = activeDeliverables.filter((w) => !w.supplierId).length
-      const pendingPoDeliverables = activeDeliverables.filter((w) => !poByWs.has(w.id)).length
+      const activeProducts = projects.filter((p) => !p.isNonNpi && !isArchivedStatus(p.status))
+      const missingBaselineCount = activeProducts.filter((p) => !p.baselineDate).length
+      const urgentOrRiskStages = workstreams.filter((w) => w.status === 'Urgent' || w.status === 'Risk').length
       const overdueOpenTasks = tasks.filter(
         (t) => t.status !== 'Completed' && t.status !== 'Cancelled' && !!t.dueDate && t.dueDate < today,
       ).length
@@ -125,19 +110,17 @@ export function SettingsPage() {
       ).length
 
       const projectIdSet = new Set(projects.map((p) => p.id))
-      const supplierIdSet = new Set(suppliers.map((s) => s.id))
-      const meetingIdSet = new Set(meetings.map((m) => m.id))
       const orphanLinksCount =
-        projectSuppliers.filter((ps) => !projectIdSet.has(ps.projectId) || !supplierIdSet.has(ps.supplierId)).length +
-        meetingActions.filter((ma) => !meetingIdSet.has(ma.meetingId)).length
+        workstreams.filter((w) => !projectIdSet.has(w.projectId)).length +
+        tasks.filter((t) => !projectIdSet.has(t.projectId)).length +
+        milestones.filter((m) => !projectIdSet.has(m.projectId)).length
 
       return {
         ...dbStat,
         sample,
         health: {
           missingBaselineCount,
-          unassignedSupplierDeliverables,
-          pendingPoDeliverables,
+          urgentOrRiskStages,
           overdueOpenTasks,
           overdueMilestones,
           orphanLinksCount,
@@ -169,11 +152,7 @@ export function SettingsPage() {
     window.localStorage.setItem('npi.projects.collapsedIds', JSON.stringify({}))
     window.localStorage.setItem('npi.nonnpi.collapsedIds', JSON.stringify({}))
     window.localStorage.setItem('npi.archived.collapsedIds', JSON.stringify({}))
-    const allSuppliers = await db.suppliers.toArray()
-    const expandedContacts: Record<string, boolean> = {}
-    for (const s of allSuppliers) expandedContacts[s.id] = true
-    window.localStorage.setItem('npi.suppliers.expandedContacts', JSON.stringify(expandedContacts))
-    setMsg({ type: 'ok', text: 'All Projects, Non-NPI Work, Archived items, and Supplier contact rows are now expanded.' })
+    setMsg({ type: 'ok', text: 'All Products, Side-Quest, and Archived items are now expanded.' })
   }
 
   async function handleCollapseAllGroups() {
@@ -189,8 +168,7 @@ export function SettingsPage() {
     window.localStorage.setItem('npi.projects.collapsedIds', JSON.stringify(projCollapsed))
     window.localStorage.setItem('npi.nonnpi.collapsedIds', JSON.stringify(nonNpiCollapsed))
     window.localStorage.setItem('npi.archived.collapsedIds', JSON.stringify(archivedCollapsed))
-    window.localStorage.setItem('npi.suppliers.expandedContacts', JSON.stringify({}))
-    setMsg({ type: 'ok', text: 'All Projects, Non-NPI Work, Archived items, and Supplier contact rows are now collapsed.' })
+    setMsg({ type: 'ok', text: 'All Products, Side-Quest, and Archived items are now collapsed.' })
   }
 
   function handleResetSavedFilters() {
@@ -199,7 +177,6 @@ export function SettingsPage() {
     }
     setWeeksToShow(4)
     setThisWeekSortBy('priority')
-    setLeftWidgetTab('radar')
     setMsg({ type: 'ok', text: 'All saved filters, sorting, and expand/collapse preferences have been reset to defaults.' })
   }
 
@@ -226,17 +203,12 @@ export function SettingsPage() {
   }
 
   async function handleCleanOrphanLinks() {
-    const [projects, suppliers, meetings] = await Promise.all([
-      db.projects.toArray(),
-      db.suppliers.toArray(),
-      db.meetings.toArray(),
-    ])
+    const projects = await db.projects.toArray()
     const pIds = new Set(projects.map((p) => p.id))
-    const sIds = new Set(suppliers.map((s) => s.id))
-    const mIds = new Set(meetings.map((m) => m.id))
-    await db.transaction('rw', [db.projectSuppliers, db.meetingActions], async () => {
-      await db.projectSuppliers.filter((ps) => !pIds.has(ps.projectId) || !sIds.has(ps.supplierId)).delete()
-      await db.meetingActions.filter((ma) => !mIds.has(ma.meetingId)).delete()
+    await db.transaction('rw', [db.workstreams, db.tasks, db.milestones], async () => {
+      await db.workstreams.filter((w) => !pIds.has(w.projectId)).delete()
+      await db.tasks.filter((t) => !pIds.has(t.projectId)).delete()
+      await db.milestones.filter((m) => !pIds.has(m.projectId)).delete()
     })
   }
 
@@ -344,41 +316,6 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-              Overview Radar / Pinboard Default
-            </label>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setLeftWidgetTab('radar')
-                  setMsg({ type: 'ok', text: 'Overview left widget set to Hardware Delivery Radar.' })
-                }}
-                className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
-                  leftWidgetTab === 'radar'
-                    ? 'bg-primary text-white border-primary'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                HW Radar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLeftWidgetTab('notes')
-                  setMsg({ type: 'ok', text: 'Overview left widget set to Quick Pinboard.' })
-                }}
-                className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
-                  leftWidgetTab === 'notes'
-                    ? 'bg-primary text-white border-primary'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                Pinboard
-              </button>
-            </div>
-          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -441,25 +378,19 @@ export function SettingsPage() {
 
       <Card title="Workspace Health & Data Integrity" action={<ShieldCheck className="h-4 w-4 text-emerald-600" />}>
         <p className="text-sm text-slate-500 mb-3">
-          Live diagnostic check of active NPI schedules, deliverable commercial readiness, and relational link integrity.
+          Live diagnostic check of active product schedules, stage risks, and relational link integrity.
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-3 text-xs">
           <div className="flex items-center justify-between rounded border border-slate-200 bg-slate-50/70 px-3 py-2">
-            <span className="text-slate-600">Projects Missing HW Required</span>
+            <span className="text-slate-600">Products Missing Target Date</span>
             <Badge color={status.health.missingBaselineCount > 0 ? 'amber' : 'green'}>
               {status.health.missingBaselineCount}
             </Badge>
           </div>
           <div className="flex items-center justify-between rounded border border-slate-200 bg-slate-50/70 px-3 py-2">
-            <span className="text-slate-600">Deliverables Missing Supplier</span>
-            <Badge color={status.health.unassignedSupplierDeliverables > 0 ? 'amber' : 'green'}>
-              {status.health.unassignedSupplierDeliverables}
-            </Badge>
-          </div>
-          <div className="flex items-center justify-between rounded border border-slate-200 bg-slate-50/70 px-3 py-2">
-            <span className="text-slate-600">Deliverables Pending PO #</span>
-            <Badge color={status.health.pendingPoDeliverables > 0 ? 'blue' : 'green'}>
-              {status.health.pendingPoDeliverables}
+            <span className="text-slate-600">Urgent / Risk Stages</span>
+            <Badge color={status.health.urgentOrRiskStages > 0 ? 'red' : 'green'}>
+              {status.health.urgentOrRiskStages}
             </Badge>
           </div>
           <div className="flex items-center justify-between rounded border border-slate-200 bg-slate-50/70 px-3 py-2">
@@ -475,7 +406,7 @@ export function SettingsPage() {
             </Badge>
           </div>
           <div className="flex items-center justify-between rounded border border-slate-200 bg-slate-50/70 px-3 py-2">
-            <span className="text-slate-600">Orphaned Relational Links</span>
+            <span className="text-slate-600">Orphaned Records</span>
             <Badge color={status.health.orphanLinksCount > 0 ? 'amber' : 'green'}>
               {status.health.orphanLinksCount}
             </Badge>
@@ -500,7 +431,7 @@ export function SettingsPage() {
           <Button variant="danger" onClick={() => setConfirmReset(true)}><RotateCcw className="h-4 w-4" /> Reset Application Data</Button>
         </div>
         <p className="text-xs text-slate-400 mt-2">
-          Load / Reload Sample Data populates complete NPI & Non-NPI demo records across all tabs. Clear Sample Data removes only the demo records while keeping your own records.
+          Load / Reload Sample Data populates complete Product & Side-Quest demo records across all tabs. Clear Sample Data removes only the demo records while keeping your own records.
         </p>
       </Card>
 
@@ -527,7 +458,7 @@ export function SettingsPage() {
         message="Only the demo records will be removed. Records you created yourself are kept." />
       <ConfirmDialog open={confirmClearLogs} title="Clear all activity history logs?" confirmLabel="Clear activity logs" onCancel={() => setConfirmClearLogs(false)}
         onConfirm={async () => { setConfirmClearLogs(false); await act(handleClearActivityLogs, 'Activity history logs cleared.') }}
-        message="This removes all audit entries in Activity History while keeping all your projects, deliverables, tasks, milestones, and suppliers untouched." />
+        message="This removes all audit entries in Activity History while keeping all your products, stages, tasks, and milestones untouched." />
       <ConfirmDialog open={confirmReset} title="Reset all application data?" confirmLabel="Yes, delete everything" onCancel={() => setConfirmReset(false)}
         onConfirm={async () => { setConfirmReset(false); await act(resetAllData, 'All data was deleted.') }}
         message={<><b>This deletes every record</b>, including your own. It cannot be undone — export a JSON backup first if unsure.</>} />

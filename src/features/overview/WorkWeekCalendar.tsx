@@ -116,7 +116,7 @@ function taskCardStyle(t: Task, today: string): string {
   if (t.dueDate && t.dueDate < today) {
     return 'border-red-400 border-l-4 border-l-red-600 bg-red-100/90 text-red-950'
   }
-  if (t.status === 'Waiting for Supplier' || t.status === 'On Hold') {
+  if (t.status === 'On Hold') {
     return 'border-amber-400 border-l-4 border-l-amber-500 bg-amber-100/90 text-amber-950'
   }
   if (t.status === 'Under Review') {
@@ -463,7 +463,7 @@ export function WorkWeekCalendar({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
         <div className="flex flex-wrap items-center gap-3">
           <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-blue-500 border border-blue-700" /> Task: In Progress</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-amber-400 border border-amber-600" /> Waiting for Supplier</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-amber-400 border border-amber-600" /> On Hold</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-cyan-400 border border-cyan-600" /> Under Review</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-slate-300 border border-slate-500" /> Not Started</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-purple-500 border border-purple-700" /> Milestone</span>

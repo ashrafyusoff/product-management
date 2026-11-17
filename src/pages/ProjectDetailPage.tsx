@@ -1,10 +1,18 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Archive, ArrowLeft, Calendar, Cpu, FileSpreadsheet, GitBranch, Layers, Pencil, Plus, Server, Trash2, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowLeft, ArrowUp, Calendar, Cpu, FileSpreadsheet, GitBranch, Layers, Pencil, Plus, Trash2 } from 'lucide-react'
 import { db } from '@/database/db'
-import { isArchivedStatus, type Milestone, type Supplier, type Task, type Workstream } from '@/types'
-import { Badge, Button, Card, ConfirmDialog, EmptyState, Loading, Select } from '@/components/ui'
+import {
+  PRODUCT_STAGES,
+  STAGE_STATUSES,
+  isArchivedStatus,
+  type Milestone,
+  type StageStatus,
+  type Task,
+  type Workstream,
+} from '@/types'
+import { Badge, Button, Card, ConfirmDialog, EmptyState, Loading, ProgressBar } from '@/components/ui'
 import { ProjectForm } from '@/features/projects/ProjectForm'
 import { WorkstreamForm } from '@/features/projects/WorkstreamForm'
 import { ProjectGanttChart } from '@/features/projects/ProjectGanttChart'
@@ -12,36 +20,28 @@ import { TaskForm } from '@/features/tasks/TaskForm'
 import { MilestoneForm } from '@/features/tasks/MilestoneForm'
 import { TaskTable } from '@/features/tasks/TaskTable'
 import { MilestoneTable } from '@/features/tasks/MilestoneTable'
-import { CommercialBadge, buildDeliverableCommercialRows, normalizeHardwareStatus } from '@/features/commercial/CommercialForms'
-import { InlineCommercialCell } from './ProjectsPage'
+import { InlineStatusSelect } from './ProjectsPage'
 import { exportSingleProjectReport } from '@/services/exportService'
 import { deleteTask } from '@/services/taskService'
 import { deleteMilestone } from '@/services/milestoneService'
 import { deleteProject } from '@/services/projectService'
-import { deleteWorkstream, updateWorkstream } from '@/services/workstreamService'
-import { linkSupplierToProject, unlinkSupplierFromProject } from '@/services/supplierService'
+import { deleteWorkstream, moveWorkstreamOrder, sortWorkstreams, updateWorkstream } from '@/services/workstreamService'
 import { daysUntil, formatDate, formatDateTime, isPast } from '@/utils/helpers'
 import { errorMessage } from '@/utils/validation'
 
-const TABS = ['Overview', 'Deliverables & Commercial', 'Tasks', 'Suppliers', 'Milestones', 'Activity History'] as const
+const TABS = ['Overview', 'Product Stages', 'Tasks', 'Milestones', 'Activity History'] as const
 type Tab = (typeof TABS)[number]
 
-// Everything about ONE project, loaded live from the database.
 function useProjectData(id: string) {
   return useLiveQuery(async () => {
-    const [project, workstreams, tasks, milestones, quotations, pets, pos, logs, links, suppliers] = await Promise.all([
+    const [project, workstreams, tasks, milestones, logs] = await Promise.all([
       db.projects.get(id),
       db.workstreams.where('projectId').equals(id).toArray(),
       db.tasks.where('projectId').equals(id).toArray(),
       db.milestones.where('projectId').equals(id).toArray(),
-      db.quotations.where('projectId').equals(id).toArray(),
-      db.petRecords.where('projectId').equals(id).toArray(),
-      db.poRecords.where('projectId').equals(id).toArray(),
       db.activityLogs.where('projectId').equals(id).toArray(),
-      db.projectSuppliers.where('projectId').equals(id).toArray(),
-      db.suppliers.toArray(),
     ])
-    return { project, workstreams, tasks, milestones, quotations, pets, pos, logs, links, suppliers }
+    return { project, workstreams, tasks, milestones, logs }
   }, [id])
 }
 
@@ -49,16 +49,13 @@ function Table({ head, children }: { head: string[]; children: ReactNode }) {
   return (
     <div className="overflow-x-auto -mx-4 -mb-4">
       <table className="w-full text-sm">
-        <thead className="text-xs text-slate-500 text-left bg-slate-50"><tr>{head.map((h) => <th key={h} className="px-4 py-2 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
+        <thead className="text-xs text-slate-500 text-left bg-slate-50">
+          <tr>{head.map((h) => <th key={h} className="px-4 py-2 font-medium whitespace-nowrap">{h}</th>)}</tr>
+        </thead>
         <tbody className="[&>tr]:border-t [&>tr]:border-slate-100 [&_td]:px-4 [&_td]:py-2">{children}</tbody>
       </table>
     </div>
   )
-}
-
-function deliverableDisplayName(w: Workstream) {
-  if (w.category === 'Others' && w.name && w.name !== 'Others') return `Others (${w.name})`
-  return w.name || w.category
 }
 
 export function ProjectDetailPage() {
@@ -67,17 +64,19 @@ export function ProjectDetailPage() {
   const [searchParams] = useSearchParams()
   const data = useProjectData(id)
   const [tab, setTab] = useState<Tab>(() =>
-    searchParams.get('tab') === 'deliverables' ? 'Deliverables & Commercial' : 'Overview',
+    searchParams.get('tab') === 'stages' ? 'Product Stages' : 'Overview',
   )
 
   useEffect(() => {
-    if (searchParams.get('tab') === 'deliverables') {
-      setTab('Deliverables & Commercial')
+    if (searchParams.get('tab') === 'stages') {
+      setTab('Product Stages')
     }
   }, [searchParams])
+
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [wsOpen, setWsOpen] = useState(false)
+  const [wsDefaultCategory, setWsDefaultCategory] = useState<string | undefined>()
   const [wsEditing, setWsEditing] = useState<Workstream | undefined>()
   const [wsDeleting, setWsDeleting] = useState<Workstream | undefined>()
   const [taskOpen, setTaskOpen] = useState(false)
@@ -86,243 +85,255 @@ export function ProjectDetailPage() {
   const [msOpen, setMsOpen] = useState(false)
   const [msEditing, setMsEditing] = useState<Milestone | undefined>()
   const [msDeleting, setMsDeleting] = useState<Milestone | undefined>()
-
-  const [linkId, setLinkId] = useState('')
   const [error, setError] = useState('')
 
-  const commercialRows = useMemo(() => {
-    if (!data?.project) return []
-    return buildDeliverableCommercialRows(
-      data.workstreams,
-      data.quotations,
-      data.pets,
-      data.pos,
-      [data.project],
-      data.suppliers,
-    )
-  }, [data])
-
   if (!data) return <Loading />
-  const { project: p, workstreams, tasks, milestones, logs, links, suppliers } = data
+  const { project: p, workstreams: rawWorkstreams, tasks, milestones, logs } = data
+  const workstreams = sortWorkstreams(rawWorkstreams)
   if (!p) {
-    return <Card><EmptyState title="Project not found" hint="It may have been deleted." action={<Button onClick={() => navigate('/projects')}>Back to Projects</Button>} /></Card>
+    return (
+      <Card>
+        <EmptyState
+          title="Product not found"
+          hint="It may have been deleted."
+          action={<Button onClick={() => navigate('/projects')}>Back to Products</Button>}
+        />
+      </Card>
+    )
   }
 
-  const supName = (sid: string) => suppliers.find((s) => s.id === sid)?.name ?? '—'
-  const linkedSuppliers = links.map((l) => suppliers.find((s) => s.id === l.supplierId)).filter((s): s is Supplier => !!s)
-  const unlinked = suppliers.filter((s) => !links.some((l) => l.supplierId === s.id))
-  const run = async (fn: () => Promise<void>) => { try { setError(''); await fn() } catch (e) { setError(errorMessage(e)) } }
-  const count = (t: Tab) => ({
-    'Deliverables & Commercial': workstreams.length,
-    Tasks: tasks.length,
-    Suppliers: linkedSuppliers.length,
-    Milestones: milestones.length,
-  })[t as string]
-
   const archived = isArchivedStatus(p.status)
+  const openTasks = tasks.filter((t) => t.status !== 'Completed' && t.status !== 'Cancelled')
+  const openMilestones = milestones.filter((m) => m.status !== 'Completed')
+  const tabCls = (t: Tab) =>
+    `px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px ${
+      tab === t ? 'border-primary text-primary font-medium' : 'border-transparent text-slate-500 hover:text-slate-800'
+    }`
+
+  const openAddStage = (category?: string) => {
+    setWsEditing(undefined)
+    setWsDefaultCategory(category)
+    setWsOpen(true)
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <Link to={archived ? '/archived' : '/projects'} className="mt-1 text-slate-400 hover:text-slate-700" aria-label={archived ? 'Back to archived' : 'Back to projects'}><ArrowLeft className="h-5 w-5" /></Link>
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold">HRS {p.code}{p.deviceName ? ` · ${p.deviceName}` : ''}</h2>
-            <Badge color="blue">{p.hwType || 'FT'}</Badge>
-            <Badge>{p.status}</Badge>
-            {archived && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700">
-                <Archive className="h-3 w-3" /> Archived
-              </span>
-            )}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <Link to={archived ? '/archived' : '/projects'} className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900">
+          <ArrowLeft className="h-4 w-4" /> Back to {archived ? 'Archived' : 'Products'}
+        </Link>
+        {archived && (
+          <div className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">
+            <Archive className="h-3.5 w-3.5" /> Archived ({p.status}) — Read-only / non-returnable
           </div>
-          {p.atePlatform && <p className="text-sm text-slate-500">ATE Platform: {p.atePlatform}</p>}
-        </div>
-        <div className="ml-auto flex gap-2">
-          <Button onClick={() => run(() => exportSingleProjectReport(p.id))}>
-            <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Export to Excel
-          </Button>
-          {!archived && <Button onClick={() => setEditOpen(true)}><Pencil className="h-4 w-4" /> Edit</Button>}
-          <Button onClick={() => setDeleteOpen(true)}><Trash2 className="h-4 w-4 text-red-500" /> Delete</Button>
-        </div>
+        )}
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="flex gap-1 overflow-x-auto border-b border-slate-200">
+      {/* Header: Product Name + Package Type */}
+      <Card>
+        <div className="flex flex-wrap items-start gap-4">
+          <div className="flex-1 min-w-[260px]">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-900">{p.name}</h2>
+              {p.packageType && <Badge color="indigo">{p.packageType}</Badge>}
+              <Badge color="slate">{p.code}</Badge>
+              <Badge>{p.priority}</Badge>
+              <Badge>{p.status}</Badge>
+            </div>
+            {p.description && <p className="text-sm text-slate-600 mt-1">{p.description}</p>}
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500 mt-3">
+              <span className="inline-flex items-center gap-1"><Cpu className="h-3.5 w-3.5" /> Product: <b className="text-slate-700">{p.name}</b></span>
+              {p.packageType && <span className="inline-flex items-center gap-1"><Layers className="h-3.5 w-3.5" /> Package: <b className="text-slate-700">{p.packageType}</b></span>}
+              <span className="inline-flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> Start: <b className="text-slate-700">{formatDate(p.startDate)}</b></span>
+              <span className="inline-flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> Target: <b className="text-slate-700">{formatDate(p.baselineDate)}</b></span>
+              {p.revisedDate && <span>Revised: <b className="text-slate-700">{formatDate(p.revisedDate)}</b></span>}
+              {p.actualDate && <span>Actual: <b className="text-slate-700">{formatDate(p.actualDate)}</b></span>}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => exportSingleProjectReport(p.id)}>
+              <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Export Report & Gantt
+            </Button>
+            {!archived && (
+              <Button onClick={() => setEditOpen(true)}>
+                <Pencil className="h-4 w-4" /> Edit Product
+              </Button>
+            )}
+            <Button variant="danger" onClick={() => setDeleteOpen(true)}>
+              <Trash2 className="h-4 w-4" /> Delete
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200 overflow-x-auto">
         {TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px ${tab === t ? 'border-primary text-primary font-medium' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
-            {t}{count(t) !== undefined && <span className="ml-1.5 text-xs text-slate-400">{count(t)}</span>}
+          <button key={t} onClick={() => setTab(t)} className={tabCls(t)}>
+            {t}
+            {t === 'Product Stages' && <span className="ml-1 text-xs text-slate-400">{workstreams.length}</span>}
+            {t === 'Tasks' && <span className="ml-1 text-xs text-slate-400">{tasks.length}</span>}
+            {t === 'Milestones' && <span className="ml-1 text-xs text-slate-400">{milestones.length}</span>}
           </button>
         ))}
       </div>
 
+      {error && <p className="text-sm text-red-600">{error}</p>}
+
       {tab === 'Overview' && (
-        <div className="space-y-3">
-          {/* Compact, attractive executive summary ribbon */}
-          <section className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="h-1 w-full bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500" />
-            <div className="p-3 space-y-2.5">
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-                {/* 1. HRS & HW Type */}
-                <div className="rounded-md border border-slate-100 bg-slate-50/70 px-2.5 py-2">
-                  <div className="flex items-center justify-between text-[11px] font-medium text-slate-400">
-                    <span>HRS / HW Type</span>
-                    <Layers className="h-3.5 w-3.5 text-blue-500" />
-                  </div>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <span className="text-sm font-bold text-slate-900">{p.code}</span>
-                    <Badge color="blue">{p.hwType || 'FT'}</Badge>
-                  </div>
-                </div>
-
-                {/* 2. Device Name */}
-                <div className="rounded-md border border-slate-100 bg-slate-50/70 px-2.5 py-2 min-w-0">
-                  <div className="flex items-center justify-between text-[11px] font-medium text-slate-400">
-                    <span>Device Name</span>
-                    <Cpu className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                  </div>
-                  <div className="mt-1 text-sm font-semibold text-slate-800 truncate" title={p.deviceName || '—'}>
-                    {p.deviceName || '—'}
-                  </div>
-                </div>
-
-                {/* 3. ATE Platform */}
-                <div className="rounded-md border border-slate-100 bg-slate-50/70 px-2.5 py-2 min-w-0">
-                  <div className="flex items-center justify-between text-[11px] font-medium text-slate-400">
-                    <span>ATE Platform</span>
-                    <Server className="h-3.5 w-3.5 text-violet-500 shrink-0" />
-                  </div>
-                  <div className="mt-1 text-sm font-semibold text-slate-800 truncate" title={p.atePlatform || '—'}>
-                    {p.atePlatform || '—'}
-                  </div>
-                </div>
-
-                {/* 4. Schedule (Start → HW Required) */}
-                <div className="rounded-md border border-slate-100 bg-slate-50/70 px-2.5 py-2">
-                  <div className="flex items-center justify-between text-[11px] font-medium text-slate-400">
-                    <span>Start → HW Required</span>
-                    <Calendar className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                  </div>
-                  <div className="mt-1 text-xs font-semibold text-slate-800 whitespace-nowrap">
-                    {formatDate(p.startDate)} → <span className="text-primary">{formatDate(p.baselineDate)}</span>
-                  </div>
-                </div>
-
-                {/* 5. Breakdown Counts */}
-                <div className="rounded-md border border-slate-100 bg-slate-50/70 px-2.5 py-2">
-                  <div className="flex items-center justify-between text-[11px] font-medium text-slate-400">
-                    <span>Items Tracked</span>
-                    <GitBranch className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                  </div>
-                  <div className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-slate-700 whitespace-nowrap">
-                    <span>{workstreams.length} Deliv</span>
-                    <span className="text-slate-300">·</span>
-                    <span>{tasks.length} Tasks</span>
-                    <span className="text-slate-300">·</span>
-                    <span>{milestones.length} MS</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Compact single-line description & deadline indicator */}
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded bg-slate-50 px-3 py-1.5 text-xs border border-slate-100">
-                <div className="min-w-0 flex-1 text-slate-600">
-                  <span className="font-semibold text-slate-700 mr-1.5">Description:</span>
-                  <span>{p.description || 'No description provided.'}</span>
-                </div>
-                {p.baselineDate && !archived && (
-                  <span className="shrink-0">
-                    {daysUntil(p.baselineDate) < 0 ? (
-                      <Badge color="red">Overdue by {-daysUntil(p.baselineDate)}d</Badge>
+        <div className="space-y-4">
+          {/* 8 Product Stage Categories Grid */}
+          <Card
+            title="Product Stage Coverage (Qual → PN Setup)"
+            action={
+              !archived && (
+                <Button size="sm" variant="primary" onClick={() => openAddStage()}>
+                  <Plus className="h-3.5 w-3.5" /> Add Stage
+                </Button>
+              )
+            }
+          >
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {PRODUCT_STAGES.map((cat) => {
+                const items = workstreams.filter((w) => w.category === cat)
+                return (
+                  <div key={cat} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">{cat}</span>
+                      {!archived && (
+                        <button
+                          onClick={() => openAddStage(cat)}
+                          className="text-[11px] font-medium text-primary hover:underline inline-flex items-center gap-0.5"
+                          title={`Add ${cat} stage`}
+                        >
+                          <Plus className="h-3 w-3" /> Add
+                        </button>
+                      )}
+                    </div>
+                    {items.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">Not started / none</p>
                     ) : (
-                      <Badge color="green">{daysUntil(p.baselineDate)}d until HW Required</Badge>
+                      <div className="space-y-1.5">
+                        {items.map((w) => (
+                          <button
+                            key={w.id}
+                            onClick={() => { setWsEditing(w); setWsDefaultCategory(undefined); setWsOpen(true) }}
+                            className="w-full text-left rounded border border-slate-200 bg-white px-2.5 py-1.5 hover:border-primary/50 transition-colors"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium text-slate-800 truncate">{w.name || w.category}</span>
+                              <Badge>{w.status}</Badge>
+                            </div>
+                            {w.targetDate && (
+                              <p className="text-[11px] text-slate-500 mt-0.5">Target: {formatDate(w.targetDate)}</p>
+                            )}
+                          </button>
+                        ))}
+                      </div>
                     )}
-                  </span>
-                )}
-              </div>
+                  </div>
+                )
+              })}
             </div>
-          </section>
-
-          <Card title={`NPI / HRS ${p.code} Master Gantt Chart`}>
-            <ProjectGanttChart
-              project={p}
-              workstreams={workstreams}
-              commercialRows={commercialRows}
-              milestones={milestones}
-              tasks={tasks}
-            />
           </Card>
+
+          <ProjectGanttChart project={p} workstreams={workstreams} milestones={milestones} tasks={tasks} />
+
+          <div className="grid lg:grid-cols-2 gap-4">
+            <Card title={`Open Tasks (${openTasks.length})`} action={<button className="text-xs text-primary hover:underline" onClick={() => setTab('Tasks')}>View all</button>}>
+              {openTasks.length === 0 ? <p className="text-sm text-slate-400">No open tasks.</p> : (
+                <ul className="space-y-2 text-sm">
+                  {openTasks.slice(0, 6).map((t) => (
+                    <li key={t.id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{t.name}</span>
+                      <span className="text-xs text-slate-500 whitespace-nowrap">{formatDate(t.dueDate)} · <Badge>{t.status}</Badge></span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+
+            <Card title={`Upcoming Milestones (${openMilestones.length})`} action={<button className="text-xs text-primary hover:underline" onClick={() => setTab('Milestones')}>View all</button>}>
+              {openMilestones.length === 0 ? <p className="text-sm text-slate-400">No pending milestones.</p> : (
+                <ul className="space-y-2 text-sm">
+                  {openMilestones.slice(0, 6).map((m) => (
+                    <li key={m.id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{m.name}</span>
+                      <span className="text-xs text-slate-500 whitespace-nowrap">
+                        {formatDate(m.targetDate)} {daysUntil(m.targetDate) < 0 && <span className="text-red-600">(late)</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
         </div>
       )}
 
-      {tab === 'Deliverables & Commercial' && (
+      {tab === 'Product Stages' && (
         <Card
-          title={`Deliverables & Commercial Tracking (Branches of HRS ${p.code})`}
-          action={
-            !archived ? (
-              <Button size="sm" variant="primary" onClick={() => { setWsEditing(undefined); setWsOpen(true) }}>
-                <Plus className="h-3.5 w-3.5" /> Add Deliverable
-              </Button>
-            ) : undefined
-          }
+          title="Product Stages"
+          action={!archived && <Button size="sm" variant="primary" onClick={() => openAddStage()}><Plus className="h-4 w-4" /> Add Stage</Button>}
         >
           {workstreams.length === 0 ? (
-            <EmptyState title="No deliverables yet" hint="Add PCB, Socket, Handler Kit, Stiffener, Probe Card, Probe Head, or Others deliverables for this project." />
+            <EmptyState
+              title="No product stages yet"
+              hint="Add stages like Qual, Sample, PPAP, PCN, Safe Launch, CMT, OB conversion, or PN Setup."
+            />
           ) : (
-            <Table head={['Deliverable Branch', 'MPN', 'Supplier', 'Delivery Dates', 'Hardware Status (Quote · PET · PO)', 'Remarks', ...(archived ? [] : ['Actions'])]}>
+            <Table head={['Category', 'Progress', 'Status', 'Target Date', 'Remarks', 'Actions']}>
               {workstreams.map((w, idx) => {
-                const isLast = idx === workstreams.length - 1
-                const comm = commercialRows.find((r) => r.workstream.id === w.id)
-                const q = comm?.quotation
-                const pet = comm?.pet
-                const po = comm?.po
-                const hwStatus = normalizeHardwareStatus(po)
-                const late = po && !po.actualDelivery && isPast(po.expectedDelivery) && hwStatus !== 'Delivered'
+                const late = w.status !== 'Done' && !!w.targetDate && isPast(w.targetDate)
                 return (
                   <tr key={w.id}>
-                    <td className="font-medium whitespace-nowrap">
+                    <td className="font-medium text-slate-800">
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="font-mono text-slate-400 font-bold">{isLast ? '└─' : '├─'}</span>
-                        <GitBranch className="h-3.5 w-3.5 text-primary shrink-0" />
-                        <span>{deliverableDisplayName(w)}</span>
+                        <GitBranch className="h-3.5 w-3.5 text-primary/70 shrink-0" />
+                        <Badge color="indigo">{w.category}</Badge>
                       </span>
                     </td>
-                    <td className="font-mono text-xs text-slate-600 whitespace-nowrap">{w.mpn || '—'}</td>
-                    <td>{supName(w.supplierId)}</td>
-                    <td className="whitespace-nowrap text-xs">
-                      {po && (po.expectedDelivery || po.actualDelivery) ? (
-                        <div className={late ? 'text-red-600 font-semibold' : 'text-slate-600'}>
-                          Exp: {formatDate(po.expectedDelivery)}
-                          {po.actualDelivery && <span className="block text-[11px] text-emerald-700">Act: {formatDate(po.actualDelivery)}</span>}
-                        </div>
-                      ) : '—'}
-                    </td>
+                    <td className="w-28"><ProgressBar value={w.progress} /></td>
                     <td>
                       {archived ? (
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {q?.number && <span className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-900"><b>Quote:</b> {q.number}</span>}
-                          {pet?.reference && <span className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-900"><b>PET:</b> {pet.reference}</span>}
-                          {po?.number && <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-900"><b>PO:</b> {po.number}</span>}
-                          <CommercialBadge status={hwStatus} />
-                        </div>
+                        <Badge>{w.status}</Badge>
                       ) : (
-                        <InlineCommercialCell workstream={w} comm={comm} onError={setError} />
+                        <InlineStatusSelect
+                          value={w.status}
+                          options={STAGE_STATUSES}
+                          onChange={async (next) => {
+                            try {
+                              await updateWorkstream(w.id, { ...w, status: next as StageStatus })
+                            } catch (e) {
+                              setError(errorMessage(e))
+                            }
+                          }}
+                        />
                       )}
                     </td>
-                    <td className="text-slate-500 max-w-xs truncate">{w.remarks || po?.remarks || '—'}</td>
-                    {!archived && (
-                      <td>
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" title="Edit Deliverable & Commercial" onClick={() => { setWsEditing(w); setWsOpen(true) }}>
+                    <td className={late ? 'text-red-600 font-medium whitespace-nowrap' : 'whitespace-nowrap'}>
+                      {w.targetDate ? formatDate(w.targetDate) : '—'}
+                    </td>
+                    <td className="text-slate-500 max-w-[260px] truncate" title={w.remarks}>{w.remarks || '—'}</td>
+                    <td className="whitespace-nowrap">
+                      {!archived && (
+                        <>
+                          <Button variant="ghost" size="sm" title="Move stage up" disabled={idx === 0} onClick={() => void moveWorkstreamOrder(p.id, w.id, 'up')}>
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" title="Move stage down" disabled={idx === workstreams.length - 1} onClick={() => void moveWorkstreamOrder(p.id, w.id, 'down')}>
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => { setWsEditing(w); setWsDefaultCategory(undefined); setWsOpen(true) }}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="sm" aria-label="Delete deliverable" onClick={() => setWsDeleting(w)}>
+                          <Button variant="ghost" size="sm" onClick={() => setWsDeleting(w)}>
                             <Trash2 className="h-3.5 w-3.5 text-red-500" />
                           </Button>
-                        </div>
-                      </td>
-                    )}
+                        </>
+                      )}
+                    </td>
                   </tr>
                 )
               })}
@@ -332,56 +343,49 @@ export function ProjectDetailPage() {
       )}
 
       {tab === 'Tasks' && (
-        <Card title="Tasks" className="[&>div]:!p-0" action={<Button size="sm" variant="primary" onClick={() => { setTaskEditing(undefined); setTaskOpen(true) }}><Plus className="h-3.5 w-3.5" /> Add Task</Button>}>
-          {tasks.length === 0 ? <EmptyState title="No tasks for this project" hint="Add a task to start tracking work." /> : (
-            <TaskTable tasks={[...tasks].sort((x, y) => (x.dueDate || '9999').localeCompare(y.dueDate || '9999'))} projects={[p]} workstreams={workstreams} suppliers={suppliers} showProject={false}
-              onEdit={(t) => { setTaskEditing(t); setTaskOpen(true) }} onDelete={setTaskDeleting} />
-          )}
-        </Card>
-      )}
-
-      {tab === 'Suppliers' && (
-        <Card title="Suppliers on this project" action={
-          <div className="flex gap-2">
-            <Select className="!w-52 !py-1 text-xs" value={linkId} onChange={(e) => setLinkId(e.target.value)}
-              options={[{ value: '', label: unlinked.length ? 'Select supplier…' : 'All suppliers assigned' }, ...unlinked.map((s) => ({ value: s.id, label: s.name }))]} />
-            <Button size="sm" variant="primary" disabled={!linkId} onClick={() => run(async () => { await linkSupplierToProject(p.id, linkId); setLinkId('') })}>Assign</Button>
-          </div>}>
-          {linkedSuppliers.length === 0 ? <EmptyState title="No suppliers assigned" hint="Use the dropdown above to assign a supplier from your directory." /> : (
-            <Table head={['Supplier', 'Category', 'Contact', 'Deliverables', '']}>
-              {linkedSuppliers.map((s) => (
-                <tr key={s.id}>
-                  <td className="font-medium">{s.name}</td><td className="text-slate-500">{s.category}</td><td>{s.contactPerson}</td>
-                  <td>{workstreams.filter((w) => w.supplierId === s.id).map((w) => deliverableDisplayName(w)).join(', ') || '—'}</td>
-                  <td><Button variant="ghost" size="sm" aria-label="Remove supplier" onClick={() => run(() => unlinkSupplierFromProject(p.id, s.id))}><X className="h-3.5 w-3.5" /></Button></td>
-                </tr>
-              ))}
-            </Table>
+        <Card
+          title="Tasks"
+          action={!archived && <Button size="sm" variant="primary" onClick={() => { setTaskEditing(undefined); setTaskOpen(true) }}><Plus className="h-4 w-4" /> Add Task</Button>}
+        >
+          {tasks.length === 0 ? <EmptyState title="No tasks for this product" /> : (
+            <TaskTable
+              tasks={tasks}
+              projects={[p]}
+              workstreams={workstreams}
+              showProject={false}
+              onEdit={(t) => { setTaskEditing(t); setTaskOpen(true) }}
+              onDelete={setTaskDeleting}
+            />
           )}
         </Card>
       )}
 
       {tab === 'Milestones' && (
-        <Card title="Milestones" className="[&>div]:!p-0" action={<Button size="sm" variant="primary" onClick={() => { setMsEditing(undefined); setMsOpen(true) }}><Plus className="h-3.5 w-3.5" /> Add Milestone</Button>}>
-          {milestones.length === 0 ? <EmptyState title="No milestones" hint="Add milestones such as Tape Out Date or Drawing Approval Cut-off." /> : (
-            <MilestoneTable milestones={[...milestones].sort((x, y) => x.targetDate.localeCompare(y.targetDate))} projects={[p]} showProject={false}
-              onEdit={(m) => { setMsEditing(m); setMsOpen(true) }} onDelete={setMsDeleting} />
+        <Card
+          title="Milestones"
+          action={!archived && <Button size="sm" variant="primary" onClick={() => { setMsEditing(undefined); setMsOpen(true) }}><Plus className="h-4 w-4" /> Add Milestone</Button>}
+        >
+          {milestones.length === 0 ? <EmptyState title="No milestones for this product" /> : (
+            <MilestoneTable
+              milestones={milestones}
+              projects={[p]}
+              workstreams={workstreams}
+              showProject={false}
+              onEdit={(m) => { setMsEditing(m); setMsOpen(true) }}
+              onDelete={setMsDeleting}
+            />
           )}
         </Card>
       )}
 
       {tab === 'Activity History' && (
         <Card title="Activity History">
-          {logs.length === 0 ? <EmptyState title="No activity yet" /> : (
-            <ul className="divide-y divide-slate-100">
+          {logs.length === 0 ? <EmptyState title="No activity logged yet" /> : (
+            <ul className="space-y-2 text-sm">
               {[...logs].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((l) => (
-                <li key={l.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <span className="flex items-center gap-2 min-w-0">
-                    <Badge color={l.action === 'Deleted' ? 'red' : l.action === 'Status Changed' ? 'blue' : 'grey'}>{l.action}</Badge>
-                    <Badge color="violet">{l.entity === 'Workstream' ? 'Deliverable' : l.entity}</Badge>
-                    <span className="truncate">{l.message}</span>
-                  </span>
-                  <span className="text-xs text-slate-400 shrink-0">{formatDateTime(l.createdAt)}</span>
+                <li key={l.id} className="flex justify-between gap-4 border-b border-slate-100 pb-2">
+                  <span><Badge>{l.action}</Badge> <b className="ml-1">{l.entity}</b> — {l.message}</span>
+                  <span className="text-xs text-slate-400 whitespace-nowrap">{formatDateTime(l.createdAt)}</span>
                 </li>
               ))}
             </ul>
@@ -389,22 +393,39 @@ export function ProjectDetailPage() {
         </Card>
       )}
 
+      <ProjectForm open={editOpen} project={p} onClose={() => setEditOpen(false)} />
+      <WorkstreamForm open={wsOpen} projectId={p.id} workstream={wsEditing} defaultCategory={wsDefaultCategory} onClose={() => setWsOpen(false)} />
       <TaskForm open={taskOpen} task={taskEditing} defaultProjectId={p.id} onClose={() => setTaskOpen(false)} />
       <MilestoneForm open={msOpen} milestone={msEditing} defaultProjectId={p.id} onClose={() => setMsOpen(false)} />
-      <ConfirmDialog open={!!taskDeleting} title="Delete task?" onCancel={() => setTaskDeleting(undefined)}
-        onConfirm={() => run(async () => { await deleteTask(taskDeleting!.id); setTaskDeleting(undefined) })}
-        message={<>Delete <b>{taskDeleting?.name}</b>?</>} />
-      <ConfirmDialog open={!!msDeleting} title="Delete milestone?" onCancel={() => setMsDeleting(undefined)}
-        onConfirm={() => run(async () => { await deleteMilestone(msDeleting!.id); setMsDeleting(undefined) })}
-        message={<>Delete milestone <b>{msDeleting?.name}</b>?</>} />
-      <ProjectForm open={editOpen} project={p} onClose={() => setEditOpen(false)} />
-      <WorkstreamForm open={wsOpen} projectId={p.id} workstream={wsEditing} suppliers={suppliers} onClose={() => setWsOpen(false)} />
-      <ConfirmDialog open={!!wsDeleting} title="Delete deliverable?" onCancel={() => setWsDeleting(undefined)}
-        onConfirm={() => run(async () => { await deleteWorkstream(wsDeleting!.id); setWsDeleting(undefined) })}
-        message={<>Delete deliverable <b>{wsDeleting ? deliverableDisplayName(wsDeleting) : ''}</b>? Tasks and milestones linked to it are kept but no longer assigned to a deliverable.</>} />
-      <ConfirmDialog open={deleteOpen} title="Delete project?" onCancel={() => setDeleteOpen(false)}
-        onConfirm={() => run(async () => { await deleteProject(p.id); navigate(archived ? '/archived' : '/projects') })}
-        message={<>This permanently deletes <b>HRS {p.code}</b> and everything linked to it. This cannot be undone.</>} />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Delete product?"
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={async () => { await deleteProject(p.id); navigate('/projects') }}
+        message={<>This permanently deletes <b>{p.name} ({p.packageType || p.code})</b> and all its stages, tasks, milestones, and logs.</>}
+      />
+      <ConfirmDialog
+        open={!!wsDeleting}
+        title="Delete stage?"
+        onCancel={() => setWsDeleting(undefined)}
+        onConfirm={async () => { try { await deleteWorkstream(wsDeleting!.id) } catch (e) { setError(errorMessage(e)) } setWsDeleting(undefined) }}
+        message={<>Delete stage <b>{wsDeleting?.name || wsDeleting?.category}</b>? Linked tasks and milestones will be detached.</>}
+      />
+      <ConfirmDialog
+        open={!!taskDeleting}
+        title="Delete task?"
+        onCancel={() => setTaskDeleting(undefined)}
+        onConfirm={async () => { try { await deleteTask(taskDeleting!.id) } catch (e) { setError(errorMessage(e)) } setTaskDeleting(undefined) }}
+        message={<>Delete <b>{taskDeleting?.name}</b>?</>}
+      />
+      <ConfirmDialog
+        open={!!msDeleting}
+        title="Delete milestone?"
+        onCancel={() => setMsDeleting(undefined)}
+        onConfirm={async () => { try { await deleteMilestone(msDeleting!.id) } catch (e) { setError(errorMessage(e)) } setMsDeleting(undefined) }}
+        message={<>Delete milestone <b>{msDeleting?.name}</b>?</>}
+      />
     </div>
   )
 }

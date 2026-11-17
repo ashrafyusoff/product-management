@@ -1,8 +1,6 @@
 import { useMemo } from 'react'
 import { Diamond, FolderKanban, GitBranch, ListChecks } from 'lucide-react'
 import type { Milestone, Project, Task, Workstream } from '@/types'
-import type { DeliverableCommercialRow } from '@/features/commercial/CommercialForms'
-import { CommercialBadge } from '@/features/commercial/CommercialForms'
 import { Badge } from '@/components/ui'
 import { formatDate, isPast, todayStr } from '@/utils/helpers'
 
@@ -11,34 +9,31 @@ const toMs = (s: string) => new Date(s).getTime()
 
 interface GanttItem {
   id: string
-  category: 'project' | 'deliverable' | 'milestone' | 'task'
+  category: 'project' | 'stage' | 'milestone' | 'task'
   label: string
   sublabel?: string
   startDate: string
   endDate: string
   progress: number
   status: string
-  hwStatus?: string
   isPoint?: boolean
   isLate?: boolean
   tooltip: string
 }
 
-function deliverableName(w: Workstream) {
-  if (w.category === 'Others' && w.name && w.name !== 'Others') return `Others (${w.name})`
-  return w.name || w.category
+function stageLabel(w: Workstream) {
+  if (w.name && w.name !== w.category) return `${w.category}: ${w.name}`
+  return w.category
 }
 
 export function ProjectGanttChart({
   project: p,
   workstreams,
-  commercialRows,
   milestones,
   tasks,
 }: {
   project: Project
   workstreams: Workstream[]
-  commercialRows: DeliverableCommercialRow[]
   milestones: Milestone[]
   tasks: Task[]
 }) {
@@ -49,52 +44,38 @@ export function ProjectGanttChart({
 
     const list: GanttItem[] = []
 
-    // 1. Main HRS Project Bar
+    // 1. Main Product Bar
     list.push({
       id: `proj-${p.id}`,
       category: 'project',
-      label: `HRS ${p.code}${p.deviceName ? ` · ${p.deviceName}` : ''}`,
-      sublabel: `${p.hwType || 'FT'}${p.atePlatform ? ` · ${p.atePlatform}` : ''}`,
+      label: `${p.name}${p.packageType ? ` · ${p.packageType}` : ''}`,
+      sublabel: p.code,
       startDate: projStart,
       endDate: projEnd >= projStart ? projEnd : projStart,
       progress: p.progress,
       status: p.status,
       isLate: p.status !== 'Completed' && !!p.baselineDate && isPast(p.baselineDate),
-      tooltip: `HRS ${p.code}\nStart: ${formatDate(projStart)} → HW Required: ${formatDate(p.baselineDate)}\nStatus: ${p.status}`,
+      tooltip: `${p.name} (${p.packageType || p.code})\nStart: ${formatDate(projStart)} → Target: ${formatDate(p.baselineDate)}\nStatus: ${p.status}`,
     })
 
-    // 2. Deliverables & Commercial / Hardware Delivery Bars
+    // 2. Product Stages
     for (const w of workstreams) {
-      const comm = commercialRows.find((r) => r.workstream.id === w.id)
-      const po = comm?.po
-      const q = comm?.quotation
-      const pet = comm?.pet
-      const hwStatus = po?.deliveryStatus || 'Not Started'
-      const dStart = po?.issueDate || w.startDate || projStart
-      const dEndRaw = po?.actualDelivery || po?.expectedDelivery || w.targetDate || projEnd
+      const dStart = w.startDate || projStart
+      const dEndRaw = w.actualDate || w.targetDate || projEnd
       const dEnd = dEndRaw >= dStart ? dEndRaw : dStart
-      const late = po && !po.actualDelivery && isPast(po.expectedDelivery) && hwStatus !== 'Delivered'
-
-      const commParts = [
-        w.mpn ? `MPN: ${w.mpn}` : '',
-        comm?.supplierName && comm.supplierName !== '—' ? comm.supplierName : '',
-        q?.number ? `Q: ${q.number}` : '',
-        pet?.reference ? `PET: ${pet.reference}` : '',
-        po?.number ? `PO: ${po.number}` : '',
-      ].filter(Boolean)
+      const late = !w.actualDate && !!w.targetDate && isPast(w.targetDate) && w.status !== 'Done'
 
       list.push({
-        id: `deliv-${w.id}`,
-        category: 'deliverable',
-        label: deliverableName(w),
-        sublabel: commParts.join(' · ') || 'No commercial linked yet',
+        id: `stage-${w.id}`,
+        category: 'stage',
+        label: stageLabel(w),
+        sublabel: w.remarks || w.category,
         startDate: dStart,
         endDate: dEnd,
         progress: w.progress,
         status: w.status,
-        hwStatus,
-        isLate: !!late || w.status === 'Delayed',
-        tooltip: `${deliverableName(w)}${w.mpn ? ` (${w.mpn})` : ''}\nSupplier: ${comm?.supplierName ?? '—'}\nStart/PO: ${formatDate(dStart)} → Delivery: ${formatDate(dEnd)}\nHardware Status: ${hwStatus}`,
+        isLate: !!late || w.status === 'Risk' || w.status === 'Urgent',
+        tooltip: `${stageLabel(w)}\nStart: ${formatDate(dStart)} → Target: ${formatDate(dEnd)}\nStatus: ${w.status}`,
       })
     }
 
@@ -130,7 +111,7 @@ export function ProjectGanttChart({
         id: `task-${t.id}`,
         category: 'task',
         label: t.name,
-        sublabel: `${ws ? `${deliverableName(ws)} · ` : ''}${formatDate(t.startDate)} → ${formatDate(t.dueDate)}`,
+        sublabel: `${ws ? `${stageLabel(ws)} · ` : ''}${formatDate(t.startDate)} → ${formatDate(t.dueDate)}`,
         startDate: tStart,
         endDate: tEnd,
         progress: t.progress,
@@ -166,16 +147,16 @@ export function ProjectGanttChart({
     const todayPct = Math.max(0, Math.min(100, ((toMs(today) - minMs) / totalMs) * 100))
 
     return { items: list, minMs, maxMs, ticks, todayPct }
-  }, [p, workstreams, commercialRows, milestones, tasks])
+  }, [p, workstreams, milestones, tasks])
 
   const totalSpan = Math.max(maxMs - minMs, DAY)
   const pctOf = (dateStr: string) => Math.max(0, Math.min(100, ((toMs(dateStr) - minMs) / totalSpan) * 100))
 
   const barBg = (item: GanttItem) => {
-    if (item.status === 'Completed' || item.hwStatus === 'Delivered') return 'bg-emerald-500'
-    if (item.isLate || item.status === 'Delayed') return 'bg-red-500'
+    if (item.status === 'Completed' || item.status === 'Done') return 'bg-emerald-500'
+    if (item.isLate || item.status === 'Delayed' || item.status === 'Urgent' || item.status === 'Risk') return 'bg-red-500'
     if (item.category === 'project') return 'bg-blue-600'
-    if (item.category === 'deliverable') return 'bg-indigo-500'
+    if (item.category === 'stage') return 'bg-indigo-500'
     if (item.category === 'milestone') return 'bg-amber-500'
     return 'bg-sky-500'
   }
@@ -229,7 +210,7 @@ export function ProjectGanttChart({
                 <div className="w-72 shrink-0 px-3 py-2 border-r border-slate-200 min-w-0">
                   <div className="flex items-center gap-1.5 truncate">
                     {item.category === 'project' && <FolderKanban className="h-3.5 w-3.5 text-primary shrink-0" />}
-                    {item.category === 'deliverable' && <GitBranch className="h-3.5 w-3.5 text-indigo-600 shrink-0 ml-2" />}
+                    {item.category === 'stage' && <GitBranch className="h-3.5 w-3.5 text-indigo-600 shrink-0 ml-2" />}
                     {item.category === 'milestone' && <Diamond className="h-3.5 w-3.5 text-amber-600 shrink-0 ml-2" />}
                     {item.category === 'task' && <ListChecks className="h-3.5 w-3.5 text-sky-600 shrink-0 ml-2" />}
                     <span className="truncate text-slate-800" title={item.label}>{item.label}</span>
@@ -243,7 +224,7 @@ export function ProjectGanttChart({
 
                 {/* Status / Progress column */}
                 <div className="w-40 shrink-0 px-3 py-2 border-r border-slate-200 flex items-center justify-between gap-1">
-                  {item.hwStatus ? <CommercialBadge status={item.hwStatus} /> : <Badge>{item.status}</Badge>}
+                  <Badge>{item.status}</Badge>
                 </div>
 
                 {/* Timeline Bar Area */}

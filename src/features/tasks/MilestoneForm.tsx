@@ -42,7 +42,7 @@ function Body({ milestone, defaultProjectId, onClose }: { milestone?: Milestone;
         <Select
           value={form.projectId}
           onChange={(e) => set('projectId', e.target.value)}
-          options={[{ value: '', label: 'Select project…' }, ...projects.map((p) => ({ value: p.id, label: `${p.code}${p.deviceName ? ` – ${p.deviceName}` : ''}` }))]}
+          options={[{ value: '', label: 'Select product…' }, ...projects.map((p) => ({ value: p.id, label: `${p.name}${p.packageType ? ` (${p.packageType})` : ''} [${p.code}]` }))]}
         />
       </Field>
       <Field label="Description"><Textarea value={form.description} onChange={(e) => set('description', e.target.value)} /></Field>

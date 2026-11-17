@@ -146,8 +146,8 @@ export function WorkWeekActionDashboard({
 
   function getDeviceOrCategory(proj?: Project): string {
     if (!proj) return '—'
-    if (proj.isNonNpi) return proj.code || proj.nonNpiCategory || 'Non-NPI'
-    return proj.deviceName || proj.code
+    if (proj.isNonNpi) return proj.code || proj.nonNpiCategory || 'Side-Quest'
+    return proj.name || proj.code
   }
 
   return (

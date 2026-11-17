@@ -1,29 +1,40 @@
 import { db } from '@/database/db'
-import type { Workstream } from '@/types'
+import { isStageDone, type Workstream } from '@/types'
 import { clampProgress, newId, nowIso } from '@/utils/helpers'
 import { ValidationError, checkDateOrder, requireText } from '@/utils/validation'
 import { logActivity } from './activityService'
-import { linkSupplierToProject } from './supplierService'
 
 export type WorkstreamInput = Omit<Workstream, 'id' | 'createdAt' | 'updatedAt' | 'isSample'>
 
+export function sortWorkstreams(list: Workstream[]): Workstream[] {
+  return [...list].sort(
+    (a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) || a.createdAt.localeCompare(b.createdAt),
+  )
+}
+
 function validate(i: WorkstreamInput) {
-  requireText(i.name || i.category, 'Deliverable')
+  requireText(i.category || i.name, 'Stage Category')
   checkDateOrder(i.startDate, i.targetDate, 'start date', 'target completion date')
   checkDateOrder(i.startDate, i.actualDate, 'start date', 'actual completion date')
 }
 
+function normalise(input: WorkstreamInput): WorkstreamInput {
+  const category = (input.category || 'Qual').trim()
+  const name = category
+  const progress = isStageDone(input.status) ? 100 : clampProgress(input.progress)
+  return { ...input, category, name, progress }
+}
+
 export async function createWorkstream(input: WorkstreamInput) {
   validate(input)
-  const name = (input.name || input.category || 'PCB').trim()
-  const category = input.category || name
+  const data = normalise(input)
   const now = nowIso()
   const id = newId()
-  await db.transaction('rw', db.workstreams, db.projectSuppliers, db.activityLogs, async () => {
-    await db.workstreams.add({ ...input, name, category, progress: clampProgress(input.progress), id, createdAt: now, updatedAt: now })
-    // Using a supplier on a deliverable also links it to the project automatically.
-    if (input.supplierId) await linkSupplierToProject(input.projectId, input.supplierId)
-    await logActivity('Deliverable', id, input.projectId, 'Created', `Deliverable "${name}" created`)
+  await db.transaction('rw', db.workstreams, db.activityLogs, async () => {
+    const existing = await db.workstreams.where('projectId').equals(data.projectId).toArray()
+    const maxOrder = existing.reduce((m, w) => Math.max(m, w.order ?? -1), -1)
+    await db.workstreams.add({ ...data, order: data.order ?? maxOrder + 1, id, createdAt: now, updatedAt: now })
+    await logActivity('Stage', id, data.projectId, 'Created', `Stage "${data.category}" created`)
   })
   return id
 }
@@ -31,35 +42,58 @@ export async function createWorkstream(input: WorkstreamInput) {
 export async function updateWorkstream(id: string, input: WorkstreamInput) {
   validate(input)
   const old = await db.workstreams.get(id)
-  if (!old) throw new ValidationError('Deliverable no longer exists.')
-  const name = (input.name || input.category || 'PCB').trim()
-  const category = input.category || name
-  await db.transaction('rw', db.workstreams, db.projectSuppliers, db.activityLogs, async () => {
-    await db.workstreams.update(id, { ...input, name, category, progress: clampProgress(input.progress), updatedAt: nowIso() })
-    if (input.supplierId) await linkSupplierToProject(input.projectId, input.supplierId)
-    const changed = old.status !== input.status
-    await logActivity('Deliverable', id, input.projectId, changed ? 'Status Changed' : 'Updated',
-      changed ? `Deliverable "${name}" status: ${old.status} → ${input.status}` : `Deliverable "${name}" updated`)
+  if (!old) throw new ValidationError('Stage no longer exists.')
+  const data = normalise(input)
+  await db.transaction('rw', db.workstreams, db.activityLogs, async () => {
+    await db.workstreams.update(id, { ...data, order: data.order ?? old.order, updatedAt: nowIso() })
+    const changed = old.status !== data.status
+    await logActivity(
+      'Stage',
+      id,
+      data.projectId,
+      changed ? 'Status Changed' : 'Updated',
+      changed ? `Stage "${data.category}" status: ${old.status} → ${data.status}` : `Stage "${data.category}" updated`,
+    )
+  })
+}
+
+export async function moveWorkstreamOrder(projectId: string, workstreamId: string, direction: 'up' | 'down') {
+  await db.transaction('rw', db.workstreams, async () => {
+    const ordered = sortWorkstreams(await db.workstreams.where('projectId').equals(projectId).toArray())
+    const idx = ordered.findIndex((w) => w.id === workstreamId)
+    if (idx === -1) return
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (targetIdx < 0 || targetIdx >= ordered.length) return
+    const swapped = [...ordered]
+    ;[swapped[idx], swapped[targetIdx]] = [swapped[targetIdx], swapped[idx]]
+    const now = nowIso()
+    await Promise.all(
+      swapped.map((w, i) =>
+        db.workstreams.update(w.id, { order: i, updatedAt: w.id === workstreamId || w.id === ordered[targetIdx].id ? now : w.updatedAt }),
+      ),
+    )
   })
 }
 
 export async function deleteWorkstream(id: string) {
   const w = await db.workstreams.get(id)
   if (!w) return
-  await db.transaction('rw', [db.workstreams, db.tasks, db.milestones, db.issues, db.quotations, db.petRecords, db.poRecords, db.activityLogs], async () => {
-    // Keep tasks / milestones / issues / commercial records or detach them from the deleted deliverable.
+  await db.transaction('rw', [db.workstreams, db.tasks, db.milestones, db.activityLogs], async () => {
     await db.tasks.where('workstreamId').equals(id).modify({ workstreamId: '' })
     await db.milestones.where('workstreamId').equals(id).modify({ workstreamId: '' })
-    await db.issues.where('workstreamId').equals(id).modify({ workstreamId: '' })
-    await db.quotations.where('workstreamId').equals(id).delete()
-    await db.petRecords.where('workstreamId').equals(id).delete()
-    await db.poRecords.where('workstreamId').equals(id).delete()
     await db.workstreams.delete(id)
-    await logActivity('Deliverable', id, w.projectId, 'Deleted', `Deliverable "${w.name}" deleted`)
+    await logActivity('Stage', id, w.projectId, 'Deleted', `Stage "${w.category}" deleted`)
   })
 }
 
 export const emptyWorkstream = (projectId: string): WorkstreamInput => ({
-  projectId, name: 'PCB', category: 'PCB', mpn: '', supplierId: '', status: 'Not Started',
-  progress: 0, startDate: '', targetDate: '', actualDate: '', remarks: '',
+  projectId,
+  name: 'Qual',
+  category: 'Qual',
+  status: 'Not Started',
+  progress: 0,
+  startDate: '',
+  targetDate: '',
+  actualDate: '',
+  remarks: '',
 })

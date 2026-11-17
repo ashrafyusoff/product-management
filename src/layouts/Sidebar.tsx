@@ -1,13 +1,12 @@
 import { NavLink } from 'react-router-dom'
-import { Archive, BarChart3, Briefcase, ChevronsLeft, ChevronsRight, FolderKanban, ListChecks, Settings, Truck } from 'lucide-react'
+import { Archive, BarChart3, Briefcase, ChevronsLeft, ChevronsRight, FolderKanban, ListChecks, Settings } from 'lucide-react'
 import { cn } from '@/utils/helpers'
 
 export const NAV_ITEMS = [
   { to: '/', label: 'Overview', icon: BarChart3, end: true },
-  { to: '/projects', label: 'Projects', icon: FolderKanban },
+  { to: '/projects', label: 'Products', icon: FolderKanban },
   { to: '/tasks', label: 'Tasks', icon: ListChecks },
-  { to: '/suppliers', label: 'Suppliers', icon: Truck },
-  { to: '/non-npi', label: 'Non-NPI Work', icon: Briefcase },
+  { to: '/non-npi', label: 'Side-Quest', icon: Briefcase },
   { to: '/archived', label: 'Archived', icon: Archive },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]

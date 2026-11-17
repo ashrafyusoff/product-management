@@ -1,464 +1,287 @@
 import { db } from '@/database/db'
-import { daysFromToday as d, newId, nowIso } from '@/utils/helpers'
-import { logActivity } from './activityService'
+import type { Milestone, Project, StageStatus, Task, Workstream } from '@/types'
+import { newId, nowIso } from '@/utils/helpers'
 
-// Demo data (all fictional). Every record is flagged isSample = true,
-// so "Clear Sample Data" can remove it without touching your own records.
-// Dates are relative to today so the dashboard always looks current.
+// Creates original Product Management demo data.
+// Every record gets `isSample: true` so "Clear Sample Data" only removes demo data.
 
-const SAMPLE_PROJECT_CODES = [
-  '240101',
-  '240102',
-  '240103',
-  '240104',
-  '240105',
-  '239804',
-  '239602',
-  'DOE A-001',
-  'Web Development A-002',
-  'Process Improvement A-003',
-  'Automation / Tooling A-004',
-  'Lab & Equipment A-005',
-]
-
-const SAMPLE_SUPPLIER_NAMES = [
-  'Nova Circuits Pte Ltd',
-  'Meridian Socket Technologies',
-  'Apex Handler Solutions',
-  'FormFactor Probe Systems',
-  'Kestrel Assembly Services',
-  'Brightline Components Co.',
-]
-
-export async function hasSampleData(): Promise<boolean> {
-  const sampleProjCount = await db.projects.filter((p) => !!p.isSample).count()
-  const sampleSupCount = await db.suppliers.filter((s) => !!s.isSample).count()
-  return sampleProjCount > 0 || sampleSupCount > 0
+function daysFromNow(offset: number): string {
+  const x = new Date()
+  x.setDate(x.getDate() + offset)
+  const y = x.getFullYear()
+  const m = String(x.getMonth() + 1).padStart(2, '0')
+  const day = String(x.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 export async function loadSampleData() {
-  await clearSampleData()
+  const existing = await db.projects.count()
+  if (existing > 0) throw new Error('Database already contains data. Clear or reset before loading sample data.')
+
   const now = nowIso()
-  const base = () => ({ id: newId(), isSample: true, createdAt: now, updatedAt: now })
+  const base = () => ({ id: newId(), isSample: true as const, createdAt: now, updatedAt: now })
+  const d = (offset: number) => daysFromNow(offset)
 
-  // Ensure no unique-index collision on &code (projects) or &name (suppliers)
-  const existingCodes = new Set((await db.projects.toArray()).map((p) => p.code))
-  const existingNames = new Set((await db.suppliers.toArray()).map((s) => s.name))
-  const safeCode = (code: string) => (existingCodes.has(code) ? `${code} (Sample)` : code)
-  const safeName = (name: string) => (existingNames.has(name) ? `${name} (Sample)` : name)
-
-  // ---------- Suppliers (with multiple contacts & Deliverable-aligned categories) ----------
-  const nova = {
+  // ---------- 1. Products (Fictional Product Name + Package Type) & Non-NPI Work ----------
+  const pAxon: Project = {
     ...base(),
-    name: safeName('Nova Circuits Pte Ltd'),
-    contactPerson: 'Daniel Tan (Sales Lead)',
-    email: 'daniel.tan@novacircuits.example',
-    phone: '+65 6123 4501',
-    contacts: [
-      { contactPerson: 'Daniel Tan (Sales Lead)', phone: '+65 6123 4501', email: 'daniel.tan@novacircuits.example' },
-      { contactPerson: 'Rachel Lim (CAM Engineer)', phone: '+65 6123 4508', email: 'rachel.lim@novacircuits.example' },
-      { contactPerson: 'Kevin Goh (Logistics)', phone: '+65 6123 4515', email: 'kevin.goh@novacircuits.example' },
-    ],
-    location: 'Singapore',
-    category: 'PCB',
-    remarks: 'Preferred vendor for high-layer-count ATE load boards and probe PCBs.',
-  }
-  const meridian = {
-    ...base(),
-    name: safeName('Meridian Socket Technologies'),
-    contactPerson: 'Lisa Wong (Account Manager)',
-    email: 'lisa.wong@meridiansocket.example',
-    phone: '+60 4 555 8820',
-    contacts: [
-      { contactPerson: 'Lisa Wong (Account Manager)', phone: '+60 4 555 8820', email: 'lisa.wong@meridiansocket.example' },
-      { contactPerson: 'Ahmad Faiz (Mechanical Design)', phone: '+60 4 555 8829', email: 'ahmad.faiz@meridiansocket.example' },
-      { contactPerson: 'Chong Wei (FAE Support)', phone: '+60 4 555 8835', email: 'chong.wei@meridiansocket.example' },
-    ],
-    location: 'Penang, Malaysia',
-    category: 'Socket',
-    remarks: 'High-speed coaxial pogo-pin and elastomer test sockets.',
-  }
-  const apex = {
-    ...base(),
-    name: safeName('Apex Handler Solutions'),
-    contactPerson: 'Kenji Mori (Key Account)',
-    email: 'k.mori@apexhandler.example',
-    phone: '+81 3 5550 1188',
-    contacts: [
-      { contactPerson: 'Kenji Mori (Key Account)', phone: '+81 3 5550 1188', email: 'k.mori@apexhandler.example' },
-      { contactPerson: 'Yuki Sato (Field Application)', phone: '+81 3 5550 1195', email: 'y.sato@apexhandler.example' },
-    ],
-    location: 'Yokohama, Japan',
-    category: 'Handler Kit',
-    remarks: 'Tri-temp pick-and-place handler change kits and contactors.',
-  }
-  const formfactor = {
-    ...base(),
-    name: safeName('FormFactor Probe Systems'),
-    contactPerson: 'David Park (Regional Sales)',
-    email: 'david.park@ffprobe.example',
-    phone: '+82 2 3456 7810',
-    contacts: [
-      { contactPerson: 'David Park (Regional Sales)', phone: '+82 2 3456 7810', email: 'david.park@ffprobe.example' },
-      { contactPerson: 'Min-Jae Kim (Probe Card Design)', phone: '+82 2 3456 7822', email: 'mj.kim@ffprobe.example' },
-    ],
-    location: 'Suwon, South Korea',
-    category: 'Probe Card',
-    remarks: 'MEMS vertical probe cards and probe heads for wafer sort.',
-  }
-  const kestrel = {
-    ...base(),
-    name: safeName('Kestrel Assembly Services'),
-    contactPerson: 'Marcus Lee (Operations)',
-    email: 'marcus.lee@kestrelassy.example',
-    phone: '+60 3 7788 9900',
-    contacts: [
-      { contactPerson: 'Marcus Lee (Operations)', phone: '+60 3 7788 9900', email: 'marcus.lee@kestrelassy.example' },
-      { contactPerson: 'Siti Aminah (QA Lead)', phone: '+60 3 7788 9912', email: 'siti.aminah@kestrelassy.example' },
-    ],
-    location: 'Selangor, Malaysia',
-    category: 'Stiffener',
-    remarks: 'CNC stainless steel stiffeners, frames, and PCBA assembly.',
-  }
-  const bright = {
-    ...base(),
-    name: safeName('Brightline Components Co.'),
-    contactPerson: 'Priya Nair (Sales Director)',
-    email: 'priya@brightline.example',
-    phone: '+65 6234 7712',
-    contacts: [
-      { contactPerson: 'Priya Nair (Sales Director)', phone: '+65 6234 7712', email: 'priya@brightline.example' },
-      { contactPerson: 'Jason Teo (Inside Sales)', phone: '+65 6234 7719', email: 'jason.teo@brightline.example' },
-    ],
-    location: 'Singapore',
-    category: 'Others (Thermal & RF Components)',
-    remarks: 'Active thermal chucks, high-frequency relays, and blind-mate connectors.',
-  }
-  const suppliers = [nova, meridian, apex, formfactor, kestrel, bright]
-
-  // ---------- Projects (NPI / HRS + Non-NPI Work across different categories) ----------
-  const falcon = {
-    ...base(),
-    code: safeCode('240101'),
-    name: 'FX7200 PMIC',
-    hwType: 'FT' as const,
-    deviceName: 'FX7200 PMIC',
-    atePlatform: 'Advantest V93000',
-    description: '8-site final test load board, pogo socket, and stiffener for FX7200 multi-rail automotive PMIC.',
-    objectives: '',
-    priority: 'High' as const,
-    status: 'In Progress' as const,
+    code: 'PM-101',
+    name: 'AXON-400',
+    packageType: '48-QFN-EP',
+    description: 'High-volume industrial controller qualification, PPAP, PCN rollout, and OB conversion.',
+    objectives: 'Complete Safe Launch 10-lot closure, CMT release, and OB conversion readiness.',
+    priority: 'Critical',
+    status: 'In Progress',
     startDate: d(-60),
-    baselineDate: d(24),
-    revisedDate: '',
-    actualDate: '',
-    progress: 65,
-    remarks: '',
-  }
-  const orion = {
-    ...base(),
-    code: safeCode('240102'),
-    name: 'OR5G-200 RF',
-    hwType: 'FT' as const,
-    deviceName: 'OR5G-200 RF',
-    atePlatform: 'Teradyne UltraFLEX',
-    description: 'mmWave RF test hardware including a 28-layer Megatron-6 load board, coaxial socket, and handler kit.',
-    objectives: '',
-    priority: 'Critical' as const,
-    status: 'Delayed' as const,
-    startDate: d(-75),
-    baselineDate: d(14),
-    revisedDate: '',
-    actualDate: '',
-    progress: 45,
-    remarks: '',
-  }
-  const atlas = {
-    ...base(),
-    code: safeCode('240103'),
-    name: 'AT32M3 MCU',
-    hwType: 'WT' as const,
-    deviceName: 'AT32M3 MCU',
-    atePlatform: 'Teradyne J750',
-    description: 'Wafer sort MEMS probe card and probe head for 32-bit automotive microcontroller family.',
-    objectives: '',
-    priority: 'Medium' as const,
-    status: 'Planning' as const,
-    startDate: d(-10),
-    baselineDate: d(55),
-    revisedDate: '',
-    actualDate: '',
-    progress: 20,
-    remarks: '',
-  }
-  const novaAi = {
-    ...base(),
-    code: safeCode('240104'),
-    name: 'NV900 AI SoC',
-    hwType: 'Char' as const,
-    deviceName: 'NV900 AI SoC',
-    atePlatform: 'Advantest V93000 EXA',
-    description: 'High-power characterization load board and 450W active thermal head for AI accelerator.',
-    objectives: '',
-    priority: 'High' as const,
-    status: 'In Progress' as const,
-    startDate: d(-35),
-    baselineDate: d(38),
-    revisedDate: '',
-    actualDate: '',
-    progress: 50,
-    remarks: '',
-  }
-  const bmsQual = {
-    ...base(),
-    code: safeCode('240105'),
-    name: 'BM480 BMS',
-    hwType: 'Qual' as const,
-    deviceName: 'BM480 BMS',
-    atePlatform: 'Eagle ETS-88',
-    description: 'High-voltage battery monitor qualification board awaiting silicon rev B respin confirmation.',
-    objectives: '',
-    priority: 'Low' as const,
-    status: 'On Hold' as const,
-    startDate: d(-45),
-    baselineDate: d(70),
-    revisedDate: '',
-    actualDate: '',
-    progress: 30,
-    remarks: '',
-  }
-  const lynx = {
-    ...base(),
-    code: safeCode('239804'),
-    name: 'LX-110 Sensor',
-    hwType: 'Eng' as const,
-    deviceName: 'LX-110 Sensor',
-    atePlatform: 'Advantest V93000',
-    description: 'Sensor hub test hardware released to high-volume production.',
-    objectives: '',
-    priority: 'Low' as const,
-    status: 'Completed' as const,
-    startDate: d(-180),
-    baselineDate: d(-35),
-    revisedDate: '',
-    actualDate: d(-37),
-    progress: 100,
-    remarks: '',
-  }
-  const legacyRf = {
-    ...base(),
-    code: safeCode('239602'),
-    name: 'RX-090 Legacy',
-    hwType: 'FT' as const,
-    deviceName: 'RX-090 Legacy',
-    atePlatform: 'Teradyne UltraFLEX',
-    description: 'Derivative package option cancelled by product line.',
-    objectives: '',
-    priority: 'Low' as const,
-    status: 'Cancelled' as const,
-    startDate: d(-150),
-    baselineDate: d(-60),
-    revisedDate: '',
-    actualDate: '',
-    progress: 20,
-    remarks: '',
-  }
-
-  // Non-NPI Work Sample Items across 5 categories
-  const doeWork = {
-    ...base(),
-    code: safeCode('DOE A-001'),
-    name: 'Pogo Pin Contact Resistance & Cleaning Frequency DOE',
-    isNonNpi: true,
-    nonNpiCategory: 'DOE',
-    hwType: 'FT' as const,
-    deviceName: 'DOE A-001',
-    atePlatform: '',
-    description: 'Evaluate 3 pogo-pin tip geometries and laser vs. brush cleaning intervals across 50k touchdowns.',
-    objectives: '',
-    priority: 'High' as const,
-    status: 'In Progress' as const,
-    startDate: d(-40),
-    baselineDate: d(18),
-    revisedDate: '',
-    actualDate: '',
-    progress: 60,
-    remarks: '',
-  }
-  const webWork = {
-    ...base(),
-    code: safeCode('Web Development A-002'),
-    name: 'NPI Hardware & Lab Inventory Web Portal',
-    isNonNpi: true,
-    nonNpiCategory: 'Web Development',
-    hwType: 'FT' as const,
-    deviceName: 'Web Development A-002',
-    atePlatform: '',
-    description: 'Internal web dashboard for tracking load board storage racks, socket spare counts, and calibration dates.',
-    objectives: '',
-    priority: 'Medium' as const,
-    status: 'In Progress' as const,
-    startDate: d(-50),
-    baselineDate: d(28),
-    revisedDate: '',
-    actualDate: '',
-    progress: 50,
-    remarks: '',
-  }
-  const impWork = {
-    ...base(),
-    code: safeCode('Process Improvement A-003'),
-    name: 'Standardize PCB Design Rule Check (DRC) Checklist',
-    isNonNpi: true,
-    nonNpiCategory: 'Process Improvement',
-    hwType: 'FT' as const,
-    deviceName: 'Process Improvement A-003',
-    atePlatform: '',
-    description: 'Unify V93000 and UltraFLEX schematic & layout review checklist to cut fabrication respins.',
-    objectives: '',
-    priority: 'Critical' as const,
-    status: 'Delayed' as const,
-    startDate: d(-55),
-    baselineDate: d(7),
-    revisedDate: '',
-    actualDate: '',
-    progress: 40,
-    remarks: '',
-  }
-  const autoWork = {
-    ...base(),
-    code: safeCode('Automation / Tooling A-004'),
-    name: 'Automated Gerber & Pin-Map Verification Script',
-    isNonNpi: true,
-    nonNpiCategory: 'Automation / Tooling',
-    hwType: 'FT' as const,
-    deviceName: 'Automation / Tooling A-004',
-    atePlatform: '',
-    description: 'Python utility to cross-check Cadence Allegro netlist pin-maps against socket drawing coordinates.',
-    objectives: '',
-    priority: 'Low' as const,
-    status: 'Planning' as const,
-    startDate: d(-14),
     baselineDate: d(42),
     revisedDate: '',
     actualDate: '',
-    progress: 25,
-    remarks: '',
-  }
-  const labWork = {
-    ...base(),
-    code: safeCode('Lab & Equipment A-005'),
-    name: 'TDR & VNA Probe Station Annual Calibration',
-    isNonNpi: true,
-    nonNpiCategory: 'Lab & Equipment',
-    hwType: 'Char' as const,
-    deviceName: 'Lab & Equipment A-005',
-    atePlatform: '',
-    description: 'Verify 40GHz VNA calibration standards and replace worn SMA torque wrenches in NPI lab.',
-    objectives: '',
-    priority: 'Medium' as const,
-    status: 'Completed' as const,
-    startDate: d(-45),
-    baselineDate: d(-10),
-    revisedDate: '',
-    actualDate: d(-12),
-    progress: 100,
-    remarks: '',
+    progress: 70,
+    remarks: 'Qualification and PPAP complete; Safe Launch and CMT in final review.',
   }
 
-  const projects = [
-    falcon,
-    orion,
-    atlas,
-    novaAi,
-    bmsQual,
-    lynx,
-    legacyRf,
-    doeWork,
-    webWork,
-    impWork,
-    autoWork,
-    labWork,
-  ]
-
-  // ---------- Individual Deliverables (each HRS.Deliverable tracked individually) ----------
-  const ws = (
-    projectId: string,
-    category: 'PCB' | 'Socket' | 'Handler Kit' | 'Stiffener' | 'Probe Card' | 'Probe Head' | 'Others',
-    customName: string,
-    mpn: string,
-    supplierId: string,
-    status: 'Not Started' | 'In Progress' | 'On Hold' | 'Delayed' | 'Completed',
-    progress: number,
-  ) => ({
+  const pVectra: Project = {
     ...base(),
-    projectId,
-    name: customName || category,
-    category,
-    mpn,
-    supplierId,
-    status,
-    progress,
-    startDate: '',
-    targetDate: '',
+    code: 'PM-102',
+    name: 'VECTRA-M7',
+    packageType: '144-BGA-TP',
+    description: 'Dual-site transfer for VECTRA-M7 144-BGA-TP covering Qual, Sample, PCN, and PN Setup.',
+    objectives: 'Finalize PCN waiver, complete SAP/ARAS PN setup, and align Safe Launch schedule.',
+    priority: 'Critical',
+    status: 'In Progress',
+    startDate: d(-48),
+    baselineDate: d(58),
+    revisedDate: d(72),
     actualDate: '',
-    remarks: '',
-  })
+    progress: 50,
+    remarks: 'Monitoring sample lot readiness and PCN approval.',
+  }
 
-  const wFalconPcb = ws(falcon.id, 'PCB', 'PCB', '71F104201', nova.id, 'In Progress', 70)
-  const wFalconSock = ws(falcon.id, 'Socket', 'Socket', '71F104202', meridian.id, 'In Progress', 60)
-  const wFalconStiff = ws(falcon.id, 'Stiffener', 'Stiffener', '71F104209', kestrel.id, 'Completed', 100)
+  const pHelios: Project = {
+    ...base(),
+    code: 'PM-103',
+    name: 'HELIOS-X2',
+    packageType: '64-TSSOP',
+    description: 'HELIOS-X2 64-TSSOP customer sample build, PPAP compilation, PCN initiation, and PN setup.',
+    objectives: 'Deliver customer samples, release PPAP package, and complete PN activation.',
+    priority: 'High',
+    status: 'In Progress',
+    startDate: d(-40),
+    baselineDate: d(35),
+    revisedDate: '',
+    actualDate: '',
+    progress: 60,
+    remarks: 'PPAP data collection on track; awaiting sample lot allocation.',
+  }
 
-  const wOrionPcb = ws(orion.id, 'PCB', 'PCB', '71F208110', nova.id, 'Delayed', 50)
-  const wOrionHandler = ws(orion.id, 'Handler Kit', 'Handler Kit', '71F208115', apex.id, 'In Progress', 40)
-  const wOrionSock = ws(orion.id, 'Socket', 'Socket', '71F208118', meridian.id, 'In Progress', 30)
+  const pPulse: Project = {
+    ...base(),
+    code: 'PM-104',
+    name: 'PULSE-210',
+    packageType: '32-DFN-S',
+    description: 'PULSE-210 32-DFN-S Safe Launch lot disposition, CMT closure, and OB conversion.',
+    objectives: 'Close Safe Launch batch 2, finalize CMT sign-off, and enable Q1 OB conversion.',
+    priority: 'High',
+    status: 'Delayed',
+    startDate: d(-55),
+    baselineDate: d(20),
+    revisedDate: d(38),
+    actualDate: '',
+    progress: 60,
+    remarks: 'Batch 2 SL lot targeting completion this week; CMT closure pending.',
+  }
 
-  const wAtlasProbeCard = ws(atlas.id, 'Probe Card', 'Probe Card', '71W309001', formfactor.id, 'In Progress', 20)
-  const wAtlasProbeHead = ws(atlas.id, 'Probe Head', 'Probe Head', '71W309002', formfactor.id, 'Not Started', 0)
+  const pOrbit: Project = {
+    ...base(),
+    code: 'PM-105',
+    name: 'ORBIT-90',
+    packageType: '100-TQFP',
+    description: 'ORBIT-90 100-TQFP PPAP release, Safe Launch closure, and OB conversion.',
+    objectives: 'Complete final Safe Launch review and confirm customer demand for OB conversion.',
+    priority: 'Medium',
+    status: 'In Progress',
+    startDate: d(-35),
+    baselineDate: d(50),
+    revisedDate: '',
+    actualDate: '',
+    progress: 55,
+    remarks: 'PPAP approved; Safe Launch review scheduled.',
+  }
 
-  const wNovaPcb = ws(novaAi.id, 'PCB', 'PCB', '71C410501', nova.id, 'In Progress', 50)
-  const wNovaThermal = ws(novaAi.id, 'Others', 'Active Thermal Chuck', '71C410508', bright.id, 'In Progress', 40)
+  const pNova: Project = {
+    ...base(),
+    code: 'PM-106',
+    name: 'NOVA-12',
+    packageType: '80-LGA',
+    description: 'NOVA-12 80-LGA Steering Committee scope alignment, PCN strategy, and PPAP planning.',
+    objectives: 'Secure SC approval, align PCN strategy, and lock 3-month Qual + PPAP plan.',
+    priority: 'High',
+    status: 'Planning',
+    startDate: d(-20),
+    baselineDate: d(85),
+    revisedDate: '',
+    actualDate: '',
+    progress: 25,
+    remarks: 'Pending Steering Committee sign-off.',
+  }
 
-  const wBmsPcb = ws(bmsQual.id, 'PCB', 'PCB', '71Q512001', nova.id, 'On Hold', 30)
+  const pZenith: Project = {
+    ...base(),
+    code: 'PM-107',
+    name: 'ZENITH-G5',
+    packageType: '256-FBGA',
+    description: 'ZENITH-G5 256-FBGA extended-temp qualification, sample build planning, and PN setup.',
+    objectives: 'Confirm wafer lot availability and finalize concept PN setup.',
+    priority: 'Medium',
+    status: 'In Progress',
+    startDate: d(-28),
+    baselineDate: d(95),
+    revisedDate: '',
+    actualDate: '',
+    progress: 35,
+    remarks: 'Checking wafer inventory and extended temperature spec.',
+  }
 
-  const wLynxPcb = ws(lynx.id, 'PCB', 'PCB', '71F098401', nova.id, 'Completed', 100)
-  const wLynxSock = ws(lynx.id, 'Socket', 'Socket', '71F098402', meridian.id, 'Completed', 100)
+  const pTitan: Project = {
+    ...base(),
+    code: 'PM-108',
+    name: 'TITAN-88',
+    packageType: '20-SOIC',
+    description: 'TITAN-88 20-SOIC full product lifecycle transfer completed through OB conversion.',
+    objectives: 'Complete Qual, PPAP, PCN, Safe Launch, and PN Setup.',
+    priority: 'Low',
+    status: 'Completed',
+    startDate: d(-120),
+    baselineDate: d(-15),
+    revisedDate: '',
+    actualDate: d(-18),
+    progress: 100,
+    remarks: 'All product stages completed and closed.',
+  }
 
-  const workstreams = [
-    wFalconPcb,
-    wFalconSock,
-    wFalconStiff,
-    wOrionPcb,
-    wOrionHandler,
-    wOrionSock,
-    wAtlasProbeCard,
-    wAtlasProbeHead,
-    wNovaPcb,
-    wNovaThermal,
-    wBmsPcb,
-    wLynxPcb,
-    wLynxSock,
+  // Non-NPI / Operational Improvement Work
+  const autoWork: Project = {
+    ...base(),
+    code: 'AUTO-01',
+    name: 'Die Inventory & Outlook Sync Automation',
+    packageType: 'Internal Tooling',
+    isNonNpi: true,
+    nonNpiCategory: 'Automation / Tooling',
+    description: 'Automate weekly wafer die quantity checks and Outlook action item tracking.',
+    objectives: 'Eliminate manual spreadsheet reconciliation across product stages.',
+    priority: 'Medium',
+    status: 'In Progress',
+    startDate: d(-25),
+    baselineDate: d(25),
+    revisedDate: '',
+    actualDate: '',
+    progress: 60,
+    remarks: 'Prototype running; adding automated weekly lot-type alert.',
+  }
+
+  const procWork: Project = {
+    ...base(),
+    code: 'IMP-01',
+    name: 'PCN & PPAP Readiness Checklist',
+    packageType: 'Process Standard',
+    isNonNpi: true,
+    nonNpiCategory: 'Process Improvement',
+    description: 'Standardize PCN, PPAP, and Safe Launch gate criteria across product families.',
+    objectives: 'Reduce review board cycle time by 20%.',
+    priority: 'High',
+    status: 'In Progress',
+    startDate: d(-30),
+    baselineDate: d(15),
+    revisedDate: '',
+    actualDate: '',
+    progress: 75,
+    remarks: 'Template reviewed with Product Engineering and Quality leads.',
+  }
+
+  const projects = [pAxon, pVectra, pHelios, pPulse, pOrbit, pNova, pZenith, pTitan, autoWork, procWork]
+
+  // ---------- 2. Product Stages (Qual, Sample, PPAP, PCN, Safe Launch, CMT, OB conversion, PN Setup) ----------
+  const orderByProj = new Map<string, number>()
+  const st = (
+    projectId: string,
+    category: Workstream['category'],
+    status: StageStatus,
+    progress: number,
+    sOff: number,
+    tOff: number,
+    remarks: string,
+    actualOff?: number,
+  ): Workstream => {
+    const nextOrder = (orderByProj.get(projectId) ?? -1) + 1
+    orderByProj.set(projectId, nextOrder)
+    return {
+      ...base(),
+      projectId,
+      category,
+      name: category,
+      status,
+      progress,
+      order: nextOrder,
+      startDate: d(sOff),
+      targetDate: d(tOff),
+      actualDate: actualOff !== undefined ? d(actualOff) : status === 'Done' ? d(tOff) : '',
+      remarks,
+    }
+  }
+
+  const workstreams: Workstream[] = [
+    // AXON-400 (48-QFN-EP)
+    st(pAxon.id, 'Qual', 'Done', 100, -60, -25, 'Qual report approved by review board.', -26),
+    st(pAxon.id, 'Sample', 'Done', 100, -45, -18, 'Samples shipped to customer.', -19),
+    st(pAxon.id, 'PPAP', 'Done', 100, -40, -14, 'PPAP package approved & released.', -14),
+    st(pAxon.id, 'PCN', 'Done', 100, -35, -10, 'PCN distributed to all impacted customers.', -10),
+    st(pAxon.id, 'Safe Launch', 'On Track', 80, -20, 7, '10-lot Safe Launch tracking on schedule.'),
+    st(pAxon.id, 'CMT', 'Watch', 85, -30, 5, 'CMT in Ready for Release; verify final sign-off.'),
+    st(pAxon.id, 'OB conversion', 'On Track', 60, -10, 21, 'Capacity & OAI flags aligned with planning.'),
+    st(pAxon.id, 'PN Setup', 'Done', 100, -50, -20, 'All production PNs active in ERP.', -21),
+
+    // VECTRA-M7 (144-BGA-TP)
+    st(pVectra.id, 'Qual', 'On Track', 70, -45, 14, 'Reliability stress testing ongoing.'),
+    st(pVectra.id, 'Sample', 'Risk', 40, -20, 10, 'Sample build pending assembly capacity slot.'),
+    st(pVectra.id, 'PCN', 'Urgent', 60, -25, 4, 'PCN waiver approval required this week.'),
+    st(pVectra.id, 'Safe Launch', 'Watch', 35, -10, 28, 'Confirm 10-lot SL size & lead time.'),
+    st(pVectra.id, 'PN Setup', 'On Track', 75, -15, 6, 'PN list submitted for MDM setup.'),
+
+    // HELIOS-X2 (64-TSSOP)
+    st(pHelios.id, 'Sample', 'Risk', 45, -30, 8, 'Pending die allocation for sample build.'),
+    st(pHelios.id, 'PPAP', 'On Track', 70, -25, 12, 'Data upload ongoing; prioritizing 64-TSSOP.'),
+    st(pHelios.id, 'PCN', 'Watch', 50, -18, 16, 'PCN initiated; awaiting sample PN list.'),
+    st(pHelios.id, 'PN Setup', 'Done', 100, -35, -5, 'OAI & RFS ECO approved & implemented.', -6),
+
+    // PULSE-210 (32-DFN-S)
+    st(pPulse.id, 'Qual', 'Done', 100, -55, -20, 'Qualification complete.', -20),
+    st(pPulse.id, 'Safe Launch', 'Urgent', 65, -30, 3, 'Batch 2 SL targeting closure this week.'),
+    st(pPulse.id, 'CMT', 'Risk', 55, -25, 7, 'Waiting for final test & FA data to close CMT.'),
+    st(pPulse.id, 'OB conversion', 'Watch', 40, -10, 35, 'Customer RMAD scheduled; close SL first.'),
+
+    // ORBIT-90 (100-TQFP)
+    st(pOrbit.id, 'PPAP', 'Done', 100, -35, -4, 'PPAP approved.', -4),
+    st(pOrbit.id, 'Safe Launch', 'On Track', 75, -25, 12, 'TRB approval & SL closure pending.'),
+    st(pOrbit.id, 'OB conversion', 'Not Started', 10, 0, 50, 'Confirm customer demand before OB switch.'),
+
+    // NOVA-12 (80-LGA)
+    st(pNova.id, 'Qual', 'Watch', 30, -20, 30, 'Pending SC approval & 80-LGA scope alignment.'),
+    st(pNova.id, 'PCN', 'Not Started', 15, -5, 45, 'Align PCN strategy after SC approval.'),
+    st(pNova.id, 'PPAP', 'Not Started', 0, 10, 75, 'Backtrack from SOP target.'),
+
+    // ZENITH-G5 (256-FBGA)
+    st(pZenith.id, 'Qual', 'Watch', 40, -28, 35, 'Confirm mask set & wafer availability.'),
+    st(pZenith.id, 'Sample', 'Not Started', 15, 0, 55, 'Awaiting wafer lot confirmation.'),
+    st(pZenith.id, 'PN Setup', 'On Track', 50, -15, 20, 'Concept CMT & PN draft under review.'),
+
+    // TITAN-88 (20-SOIC)
+    st(pTitan.id, 'Qual', 'Done', 100, -120, -70, 'Completed.', -72),
+    st(pTitan.id, 'PPAP', 'Done', 100, -80, -45, 'Completed.', -46),
+    st(pTitan.id, 'PCN', 'Done', 100, -60, -30, 'Completed.', -31),
+    st(pTitan.id, 'OB conversion', 'Done', 100, -35, -15, 'Completed.', -18),
   ]
 
-  // ---------- Project ↔ Supplier links ----------
-  const links: [string, string][] = [
-    [falcon.id, nova.id],
-    [falcon.id, meridian.id],
-    [falcon.id, kestrel.id],
-    [orion.id, nova.id],
-    [orion.id, apex.id],
-    [orion.id, meridian.id],
-    [atlas.id, formfactor.id],
-    [novaAi.id, nova.id],
-    [novaAi.id, bright.id],
-    [bmsQual.id, nova.id],
-    [lynx.id, nova.id],
-    [lynx.id, meridian.id],
-  ]
-  const projectSuppliers = links.map(([projectId, supplierId]) => ({ ...base(), projectId, supplierId }))
-
-  // ---------- Tasks (Spanning Past 8 Weeks, Current Week, and Next 8 Weeks for the 17-Week Workload Chart) ----------
-  type TS = 'Not Started' | 'In Progress' | 'On Hold' | 'Waiting for Supplier' | 'Under Review' | 'Completed' | 'Cancelled'
+  // ---------- 3. Tasks (with varied workday hours for Outlook 1-Week Hourly View) ----------
   const TIME_SLOTS: readonly [string, string][] = [
     ['08:30', '10:00'],
     ['09:00', '10:30'],
@@ -471,27 +294,24 @@ export async function loadSampleData() {
     ['09:30', '11:00'],
     ['13:30', '15:00'],
   ]
-  let taskSlotIdx = 0
+  let slotIdx = 0
   const task = (
     projectId: string,
     workstreamId: string,
     name: string,
-    assignee: string,
-    supplierId: string,
     s: number,
     due: number,
-    priority: 'Low' | 'Medium' | 'High' | 'Critical',
-    status: TS,
+    priority: Task['priority'],
+    status: Task['status'],
     progress: number,
-  ) => {
-    const [startTime, endTime] = TIME_SLOTS[(taskSlotIdx++ * 3) % TIME_SLOTS.length]
+  ): Task => {
+    const [startTime, endTime] = TIME_SLOTS[(slotIdx++ * 3) % TIME_SLOTS.length]
     return {
       ...base(),
       projectId,
       workstreamId,
       name,
-      assignee,
-      supplierId,
+      assignee: 'Me',
       startDate: d(s),
       dueDate: d(due),
       startTime,
@@ -504,59 +324,46 @@ export async function loadSampleData() {
     }
   }
 
-  // Historical NPI & Non-NPI Tasks across Past 8 Weeks (-56d to -7d)
-  const hist1 = task(falcon.id, wFalconPcb.id, 'Define FX7200 power rail decoupling budget', 'Me', '', -56, -53, 'High', 'Completed', 100)
-  const hist2 = task(orion.id, wOrionPcb.id, 'Select low-loss RF laminate material with Nova', 'Me', nova.id, -50, -46, 'Critical', 'Completed', 100)
-  const hist3 = task(webWork.id, '', 'Gather lab storage rack requirements from test engineers', 'Me', '', -48, -45, 'Medium', 'Completed', 100)
-  const hist4 = task(falcon.id, wFalconSock.id, 'Approve preliminary socket outline drawing', 'Me', meridian.id, -42, -39, 'High', 'Completed', 100)
-  const hist5 = task(impWork.id, '', 'Audit past 12 months PCB ECO root causes', 'Me', '', -41, -38, 'High', 'Completed', 100)
-  const hist6 = task(orion.id, wOrionHandler.id, 'Send package BGA pod drawing to Apex Japan', 'Me', apex.id, -35, -32, 'High', 'Completed', 100)
-  const hist7 = task(doeWork.id, '', 'Prepare 3 pogo-pin tip sample lots with Meridian', 'Me', '', -34, -31, 'High', 'Completed', 100)
-  const hist8 = task(novaAi.id, wNovaPcb.id, 'Complete V93000 EXA pin-channel mapping', 'Me', '', -28, -25, 'High', 'Completed', 100)
-  const hist9 = task(webWork.id, '', 'Design IndexedDB schema for hardware rack tracking', 'Me', '', -27, -24, 'Medium', 'Completed', 100)
-  const hist10 = task(falcon.id, wFalconStiff.id, 'Release CNC stiffener step file to Kestrel', 'Me', kestrel.id, -21, -18, 'Medium', 'Completed', 100)
-  const hist11 = task(doeWork.id, '', 'Run 10k touchdown contact resistance baseline', 'Me', '', -20, -17, 'High', 'Completed', 100)
-  const hist12 = task(novaAi.id, wNovaThermal.id, 'Confirm 450W thermal head PID controller specs', 'Me', bright.id, -14, -10, 'High', 'Completed', 100)
-  const hist13 = task(labWork.id, '', 'Complete 40GHz VNA SOLT calibration verification', 'Me', '', -13, -11, 'Medium', 'Completed', 100)
+  const ws = (projId: string, cat: string) =>
+    workstreams.find((w) => w.projectId === projId && w.category === cat)?.id ?? ''
 
-  // Carry-over & Current Week Tasks (-5d to +5d)
-  const t1 = task(orion.id, wOrionPcb.id, 'Chase revised RF PCB fabrication schedule', 'Me', nova.id, -9, -3, 'Critical', 'Waiting for Supplier', 50)
-  const t2 = task(impWork.id, '', 'Consolidate high-speed RF layout rules into DRC checklist', 'Me', '', -8, -1, 'Critical', 'In Progress', 60)
-  const t3 = task(falcon.id, wFalconPcb.id, 'Complete final load board Gerber & drill review', 'Me', nova.id, -4, 0, 'High', 'Under Review', 90)
-  const t4 = task(doeWork.id, '', 'Collect 25k insertion CRes data across 3 socket sites', 'Me', '', -3, 0, 'High', 'In Progress', 70)
-  const t5 = task(falcon.id, wFalconSock.id, 'Confirm coaxial pogo pin-map with Meridian', 'Me', meridian.id, -2, 1, 'High', 'Waiting for Supplier', 60)
-  const t6 = task(webWork.id, '', 'Build barcode scanner lookup view for rack tracker', 'Me', '', -3, 1, 'Medium', 'In Progress', 50)
-  const t7 = task(orion.id, wOrionHandler.id, 'Review handler change kit 3D thermal clearance', 'Me', apex.id, -2, 2, 'High', 'In Progress', 60)
-  const t8 = task(novaAi.id, wNovaPcb.id, 'Run 3D EM simulation on SERDES differential pairs', 'Me', '', -1, 2, 'Critical', 'In Progress', 40)
-  const t9 = task(autoWork.id, '', 'Write parser for Cadence Allegro netlist export', 'Me', '', -1, 2, 'Medium', 'In Progress', 30)
-  const t10 = task(atlas.id, wAtlasProbeCard.id, 'Verify wafer pad coordinates with design team', 'Me', formfactor.id, 0, 2, 'High', 'In Progress', 40)
-  const t11 = task(orion.id, wOrionSock.id, 'Approve 40GHz elastomer socket S-parameter model', 'Me', meridian.id, 0, 3, 'High', 'Under Review', 80)
-  const t12 = task(falcon.id, wFalconPcb.id, 'Order high-precision power sense resistors', 'Me', bright.id, 1, 4, 'Medium', 'In Progress', 30)
+  const tasks: Task[] = [
+    // Past weeks completed tasks
+    task(pAxon.id, ws(pAxon.id, 'Qual'), 'Close AXON-400 Qual review board action items', -32, -26, 'High', 'Completed', 100),
+    task(pAxon.id, ws(pAxon.id, 'PPAP'), 'Submit AXON-400 PPAP package for sign-off', -22, -15, 'High', 'Completed', 100),
+    task(pHelios.id, ws(pHelios.id, 'PN Setup'), 'Verify HELIOS-X2 OAI & RFS activation', -18, -8, 'Medium', 'Completed', 100),
+    task(pOrbit.id, ws(pOrbit.id, 'PPAP'), 'Review PE comments on ORBIT-90 PPAP', -12, -5, 'High', 'Completed', 100),
 
-  // Upcoming 8 Weeks Tasks (+7d to +55d)
-  const fut1 = task(doeWork.id, '', 'Analyze 50k insertion wear SEM microscope images', 'Me', '', 5, 9, 'High', 'Not Started', 0)
-  const fut2 = task(falcon.id, wFalconPcb.id, 'Perform bare board flying-probe continuity check', 'Me', nova.id, 8, 12, 'High', 'Not Started', 0)
-  const fut3 = task(impWork.id, '', 'Conduct peer review on unified DRC checklist v1.0', 'Me', '', 10, 15, 'Medium', 'Not Started', 0)
-  const fut4 = task(orion.id, wOrionPcb.id, 'Inspect assembled RF load board TDR impedance coupons', 'Me', nova.id, 12, 18, 'Critical', 'Not Started', 0)
-  const fut5 = task(webWork.id, '', 'Deploy lab inventory portal to internal server', 'Me', '', 16, 22, 'Medium', 'Not Started', 0)
-  const fut6 = task(falcon.id, wFalconSock.id, 'Mount pogo sockets and verify coplanarity on V93000', 'Me', meridian.id, 18, 24, 'High', 'Not Started', 0)
-  const fut7 = task(autoWork.id, '', 'Add automated DRC PDF report generator to script', 'Me', '', 22, 29, 'Low', 'Not Started', 0)
-  const fut8 = task(novaAi.id, wNovaThermal.id, 'Bench-test 450W active thermal chuck ramp rate', 'Me', bright.id, 25, 33, 'High', 'Not Started', 0)
-  const fut9 = task(atlas.id, wAtlasProbeCard.id, 'Complete probe card針 (needle) planarity inspection', 'Me', formfactor.id, 32, 40, 'Medium', 'Not Started', 0)
-  const fut10 = task(autoWork.id, '', 'Roll out pin-map verification tool to NPI team', 'Me', '', 38, 46, 'Low', 'Not Started', 0)
-  const fut11 = task(atlas.id, wAtlasProbeHead.id, 'Validate wafer sort correlation on J750 tester', 'Me', formfactor.id, 45, 53, 'High', 'Not Started', 0)
-  const fut12 = task(bmsQual.id, wBmsPcb.id, 'Resume BM480 schematic update after silicon rev B', 'Me', nova.id, 20, 48, 'Low', 'On Hold', 10)
-  const fut13 = task(lynx.id, wLynxPcb.id, 'Archive final production Gerber & BOM package', 'Me', '', -60, -40, 'Low', 'Completed', 100)
+    // Current week tasks (Mon-Fri spread with distinct hours)
+    task(pVectra.id, ws(pVectra.id, 'PCN'), 'Initiate VECTRA-M7 PCN non-block waiver', -5, 0, 'Critical', 'In Progress', 60),
+    task(pPulse.id, ws(pPulse.id, 'Safe Launch'), 'Follow up PULSE-210 batch 2 SL lot disposition', -4, 0, 'Critical', 'In Progress', 70),
+    task(pAxon.id, ws(pAxon.id, 'CMT'), 'Verify AXON-400 CMT Ready-for-Release status', -3, 1, 'High', 'Under Review', 85),
+    task(pVectra.id, ws(pVectra.id, 'PN Setup'), 'Confirm MDM PN setup & lead time with planning', -2, 1, 'High', 'In Progress', 50),
+    task(pHelios.id, ws(pHelios.id, 'Sample'), 'Escalate die allocation for HELIOS-X2 sample build', -2, 2, 'High', 'In Progress', 40),
+    task(pNova.id, ws(pNova.id, 'Qual'), 'Prepare Steering Committee slides & PPAP plan', -1, 2, 'High', 'In Progress', 50),
+    task(autoWork.id, '', 'Validate automated wafer lot-type alert script', -1, 3, 'Medium', 'In Progress', 65),
+    task(pZenith.id, ws(pZenith.id, 'Qual'), 'Confirm ZENITH-G5 mask set & extended-temp spec', 0, 3, 'Medium', 'In Progress', 40),
+    task(procWork.id, '', 'Finalize unified PCN & Safe Launch gate checklist', -2, 4, 'High', 'Under Review', 80),
 
-  const tasks = [
-    hist1, hist2, hist3, hist4, hist5, hist6, hist7, hist8, hist9, hist10, hist11, hist12, hist13,
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12,
-    fut1, fut2, fut3, fut4, fut5, fut6, fut7, fut8, fut9, fut10, fut11, fut12, fut13,
+    // Upcoming weeks
+    task(pPulse.id, ws(pPulse.id, 'CMT'), 'Close PULSE-210 SL CAB & update CMT status', 2, 7, 'Critical', 'Not Started', 0),
+    task(pVectra.id, ws(pVectra.id, 'Safe Launch'), 'Align 10-lot Safe Launch schedule with ops', 4, 10, 'High', 'Not Started', 0),
+    task(pOrbit.id, ws(pOrbit.id, 'OB conversion'), 'Confirm Q1 customer demand for ORBIT-90 OB', 5, 14, 'Medium', 'Not Started', 0),
+    task(pHelios.id, ws(pHelios.id, 'PCN'), 'Review PCN distribution list & sample qty', 7, 16, 'High', 'Not Started', 0),
+    task(pAxon.id, ws(pAxon.id, 'OB conversion'), 'Sign off AXON-400 OB conversion readiness', 10, 21, 'High', 'Not Started', 0),
+    task(pNova.id, ws(pNova.id, 'PCN'), 'Create PCN rollout schedule after SC approval', 14, 28, 'Medium', 'Not Started', 0),
   ]
 
-  // ---------- Milestones ----------
-  type MS = 'Not Started' | 'In Progress' | 'Completed' | 'Delayed'
-  const ms = (projectId: string, workstreamId: string, name: string, description: string, target: number, status: MS, actual = '') => ({
+  // ---------- 4. Milestones ----------
+  const ms = (
+    projectId: string,
+    workstreamId: string,
+    name: string,
+    description: string,
+    target: number,
+    status: Milestone['status'],
+    actual = '',
+  ): Milestone => ({
     ...base(),
     projectId,
     workstreamId,
@@ -567,401 +374,42 @@ export async function loadSampleData() {
     status,
     remarks: '',
   })
-  const milestones = [
-    ms(falcon.id, '', 'Tape Out Date', 'Silicon tape-out frozen.', -20, 'Completed', d(-20)),
-    ms(falcon.id, wFalconPcb.id, 'Drawing Approval Cut-off', 'Final mechanical & layout drawing approval cut-off.', 2, 'In Progress'),
-    ms(falcon.id, wFalconPcb.id, 'PCB Fabrication Complete', 'Bare boards received from Nova Circuits.', 14, 'In Progress'),
-    ms(falcon.id, wFalconSock.id, 'Socket Delivery', 'Sockets delivered and inspected.', 20, 'Not Started'),
-    ms(falcon.id, '', 'Hardware Ready for Debug', 'Assembled hardware ready on V93000 tester.', 24, 'Not Started'),
-    ms(orion.id, wOrionPcb.id, 'RF PCB Fabrication Complete', 'Original date slipped due to laminate lead time.', -2, 'Delayed'),
-    ms(orion.id, wOrionHandler.id, 'Handler Kit 3D Freeze', '3D mechanical drawing approved.', 4, 'In Progress'),
-    ms(orion.id, wOrionHandler.id, 'Handler Kit Delivery', 'Change kit shipped from Yokohama.', 14, 'Not Started'),
-    ms(novaAi.id, wNovaThermal.id, 'Thermal Chuck Bench Sign-off', '450W thermal transient qualification.', 30, 'In Progress'),
-    ms(atlas.id, wAtlasProbeCard.id, 'Probe Card Design Freeze', 'Final probe head layout sign-off.', 10, 'Not Started'),
-    ms(lynx.id, '', 'Production Hardware Release', 'Final hardware release to manufacturing.', -37, 'Completed', d(-37)),
+
+  const milestones: Milestone[] = [
+    ms(pAxon.id, ws(pAxon.id, 'PCN'), 'AXON-400 PCN Distributed', 'Customer PCN issued', -10, 'Completed', d(-10)),
+    ms(pAxon.id, ws(pAxon.id, 'Safe Launch'), 'AXON-400 Safe Launch CAB Closure', 'Close 10-lot SL & MDR', 7, 'In Progress'),
+    ms(pVectra.id, ws(pVectra.id, 'PCN'), 'VECTRA-M7 Non-Block Waiver Approved', 'Waiver sign-off for BOM', 4, 'Delayed'),
+    ms(pPulse.id, ws(pPulse.id, 'Safe Launch'), 'PULSE-210 Batch 2 SL Lot Out', 'Target SL completion', 3, 'In Progress'),
+    ms(pHelios.id, ws(pHelios.id, 'PPAP'), 'HELIOS-X2 PPAP Release', 'Customer PPAP package sign-off', 12, 'In Progress'),
+    ms(pNova.id, ws(pNova.id, 'Qual'), 'NOVA-12 Steering Committee Gate', 'SC approval for qual & PCN plan', 18, 'Not Started'),
   ]
 
-  // ---------- Individual Commercial & Hardware Status per HRS.Deliverable ----------
-  const quotations = [
-    { ...base(), number: 'Q-NOVA-1182', projectId: falcon.id, workstreamId: wFalconPcb.id, supplierId: nova.id, remarks: '24-layer load board fabrication quote.' },
-    { ...base(), number: 'Q-MSTL-0457', projectId: falcon.id, workstreamId: wFalconSock.id, supplierId: meridian.id, remarks: '8-site pogo-pin socket assembly.' },
-    { ...base(), number: 'Q-KSTL-0094', projectId: falcon.id, workstreamId: wFalconStiff.id, supplierId: kestrel.id, remarks: 'CNC stainless steel stiffener frame.' },
-    { ...base(), number: 'Q-NOVA-1195', projectId: orion.id, workstreamId: wOrionPcb.id, supplierId: nova.id, remarks: '28-layer Megatron-6 RF load board.' },
-    { ...base(), number: 'Q-APEX-2209', projectId: orion.id, workstreamId: wOrionHandler.id, supplierId: apex.id, remarks: 'Tri-temp handler change kit quote.' },
-    { ...base(), number: 'Q-MSTL-0468', projectId: orion.id, workstreamId: wOrionSock.id, supplierId: meridian.id, remarks: '40GHz coaxial elastomer socket.' },
-    { ...base(), number: 'Q-FFPS-8821', projectId: atlas.id, workstreamId: wAtlasProbeCard.id, supplierId: formfactor.id, remarks: 'MEMS wafer probe card quote.' },
-    { ...base(), number: 'Q-NOVA-1210', projectId: novaAi.id, workstreamId: wNovaPcb.id, supplierId: nova.id, remarks: 'EXA high-density characterization PCB.' },
-    { ...base(), number: 'Q-BRTL-3304', projectId: novaAi.id, workstreamId: wNovaThermal.id, supplierId: bright.id, remarks: '450W active thermal chuck assembly.' },
-    { ...base(), number: 'Q-MSTL-0390', projectId: lynx.id, workstreamId: wLynxSock.id, supplierId: meridian.id, remarks: 'Production test socket.' },
-  ]
-  const petRecords = [
-    { ...base(), reference: 'PET-24-0132', projectId: falcon.id, workstreamId: wFalconPcb.id, supplierId: nova.id, remarks: '' },
-    { ...base(), reference: 'PET-24-0139', projectId: falcon.id, workstreamId: wFalconSock.id, supplierId: meridian.id, remarks: '' },
-    { ...base(), reference: 'PET-24-0141', projectId: falcon.id, workstreamId: wFalconStiff.id, supplierId: kestrel.id, remarks: '' },
-    { ...base(), reference: 'PET-24-0118', projectId: orion.id, workstreamId: wOrionPcb.id, supplierId: nova.id, remarks: '' },
-    { ...base(), reference: 'PET-24-0151', projectId: orion.id, workstreamId: wOrionHandler.id, supplierId: apex.id, remarks: '' },
-    { ...base(), reference: 'PET-24-0156', projectId: orion.id, workstreamId: wOrionSock.id, supplierId: meridian.id, remarks: '' },
-    { ...base(), reference: 'PET-24-0162', projectId: novaAi.id, workstreamId: wNovaPcb.id, supplierId: nova.id, remarks: '' },
-    { ...base(), reference: 'PET-24-0165', projectId: novaAi.id, workstreamId: wNovaThermal.id, supplierId: bright.id, remarks: '' },
-    { ...base(), reference: 'PET-24-0088', projectId: lynx.id, workstreamId: wLynxSock.id, supplierId: meridian.id, remarks: '' },
-  ]
-  const poRecords = [
-    {
-      ...base(),
-      number: 'PO-4500711',
-      projectId: falcon.id,
-      workstreamId: wFalconPcb.id,
-      supplierId: nova.id,
-      issueDate: d(-30),
-      amount: 14800,
-      currency: 'USD',
-      expectedDelivery: d(14),
-      actualDelivery: '',
-      status: 'Issued',
-      supplierConfirmation: 'Confirmed',
-      hardwareDelivery: 'Fabrication',
-      deliveryStatus: 'Fabrication',
-      remarks: 'Lamination complete; drilling in progress.',
-    },
-    {
-      ...base(),
-      number: 'PO-4500728',
-      projectId: falcon.id,
-      workstreamId: wFalconSock.id,
-      supplierId: meridian.id,
-      issueDate: d(-18),
-      amount: 9600,
-      currency: 'USD',
-      expectedDelivery: d(20),
-      actualDelivery: '',
-      status: 'Issued',
-      supplierConfirmation: 'Confirmed',
-      hardwareDelivery: 'In Delivery',
-      deliveryStatus: 'In Delivery',
-      remarks: 'Shipped via DHL Express from Penang.',
-    },
-    {
-      ...base(),
-      number: 'PO-4500702',
-      projectId: falcon.id,
-      workstreamId: wFalconStiff.id,
-      supplierId: kestrel.id,
-      issueDate: d(-25),
-      amount: 1850,
-      currency: 'USD',
-      expectedDelivery: d(-5),
-      actualDelivery: d(-6),
-      status: 'Delivered',
-      supplierConfirmation: 'Confirmed',
-      hardwareDelivery: 'Delivered',
-      deliveryStatus: 'Delivered',
-      remarks: 'Received in NPI lab rack B2.',
-    },
-    {
-      ...base(),
-      number: 'PO-4500690',
-      projectId: orion.id,
-      workstreamId: wOrionPcb.id,
-      supplierId: nova.id,
-      issueDate: d(-55),
-      amount: 19400,
-      currency: 'USD',
-      expectedDelivery: d(-2),
-      actualDelivery: '',
-      status: 'Issued',
-      supplierConfirmation: 'Revised Schedule',
-      hardwareDelivery: 'Fabrication',
-      deliveryStatus: 'Fabrication',
-      remarks: 'PCB fabrication slipped due to Megatron-6 laminate lead time.',
-    },
-    {
-      ...base(),
-      number: 'PO-4500741',
-      projectId: orion.id,
-      workstreamId: wOrionHandler.id,
-      supplierId: apex.id,
-      issueDate: d(-15),
-      amount: 16200,
-      currency: 'USD',
-      expectedDelivery: d(14),
-      actualDelivery: '',
-      status: 'Issued',
-      supplierConfirmation: 'Confirmed',
-      hardwareDelivery: 'Design',
-      deliveryStatus: 'Design',
-      remarks: '3D thermal clearance review in progress.',
-    },
-    {
-      ...base(),
-      number: '',
-      projectId: orion.id,
-      workstreamId: wOrionSock.id,
-      supplierId: meridian.id,
-      issueDate: '',
-      amount: 11500,
-      currency: 'USD',
-      expectedDelivery: d(12),
-      actualDelivery: '',
-      status: 'Issued',
-      supplierConfirmation: 'Pending',
-      hardwareDelivery: 'Design',
-      deliveryStatus: 'Design',
-      remarks: 'Awaiting PO release after PET approval.',
-    },
-    {
-      ...base(),
-      number: '',
-      projectId: atlas.id,
-      workstreamId: wAtlasProbeCard.id,
-      supplierId: formfactor.id,
-      issueDate: '',
-      amount: 28000,
-      currency: 'USD',
-      expectedDelivery: d(45),
-      actualDelivery: '',
-      status: 'Issued',
-      supplierConfirmation: 'Pending',
-      hardwareDelivery: 'Design',
-      deliveryStatus: 'Design',
-      remarks: 'Probe head layout in progress.',
-    },
-    {
-      ...base(),
-      number: 'PO-4500755',
-      projectId: novaAi.id,
-      workstreamId: wNovaPcb.id,
-      supplierId: nova.id,
-      issueDate: d(-10),
-      amount: 22500,
-      currency: 'USD',
-      expectedDelivery: d(28),
-      actualDelivery: '',
-      status: 'Issued',
-      supplierConfirmation: 'Confirmed',
-      hardwareDelivery: 'Design',
-      deliveryStatus: 'Design',
-      remarks: 'SERDES stack-up simulation review.',
-    },
-    {
-      ...base(),
-      number: 'PO-4500760',
-      projectId: novaAi.id,
-      workstreamId: wNovaThermal.id,
-      supplierId: bright.id,
-      issueDate: d(-8),
-      amount: 12900,
-      currency: 'USD',
-      expectedDelivery: d(30),
-      actualDelivery: '',
-      status: 'Issued',
-      supplierConfirmation: 'Confirmed',
-      hardwareDelivery: 'Fabrication',
-      deliveryStatus: 'Fabrication',
-      remarks: 'Copper heat-exchanger machining underway.',
-    },
-    {
-      ...base(),
-      number: 'PO-4500645',
-      projectId: lynx.id,
-      workstreamId: wLynxPcb.id,
-      supplierId: nova.id,
-      issueDate: d(-140),
-      amount: 9200,
-      currency: 'USD',
-      expectedDelivery: d(-50),
-      actualDelivery: d(-52),
-      status: 'Delivered',
-      supplierConfirmation: 'Confirmed',
-      hardwareDelivery: 'Delivered',
-      deliveryStatus: 'Delivered',
-      remarks: '',
-    },
-    {
-      ...base(),
-      number: 'PO-4500650',
-      projectId: lynx.id,
-      workstreamId: wLynxSock.id,
-      supplierId: meridian.id,
-      issueDate: d(-135),
-      amount: 5800,
-      currency: 'USD',
-      expectedDelivery: d(-45),
-      actualDelivery: d(-44),
-      status: 'Delivered',
-      supplierConfirmation: 'Confirmed',
-      hardwareDelivery: 'Delivered',
-      deliveryStatus: 'Delivered',
-      remarks: '',
-    },
+  // ---------- 5. Activity Logs ----------
+  const logs = [
+    { ...base(), entity: 'Stage', entityId: ws(pAxon.id, 'CMT'), projectId: pAxon.id, action: 'Status Changed' as const, message: 'AXON-400 (48-QFN-EP) CMT updated to Watch' },
+    { ...base(), entity: 'Stage', entityId: ws(pVectra.id, 'PCN'), projectId: pVectra.id, action: 'Updated' as const, message: 'VECTRA-M7 (144-BGA-TP) PCN non-block waiver initiated' },
+    { ...base(), entity: 'Stage', entityId: ws(pPulse.id, 'Safe Launch'), projectId: pPulse.id, action: 'Updated' as const, message: 'PULSE-210 (32-DFN-S) Safe Launch batch 2 in progress' },
+    { ...base(), entity: 'Milestone', entityId: milestones[0].id, projectId: pAxon.id, action: 'Status Changed' as const, message: 'AXON-400 PCN Distributed completed' },
   ]
 
-  // ---------- Meetings & actions ----------
-  const m1 = {
-    ...base(),
-    title: 'Falcon-X Weekly Hardware Sync',
-    projectId: falcon.id,
-    date: d(-3),
-    participants: 'Me, Alex Chen, Daniel Tan (Nova)',
-    summary: 'Reviewed load board layout status and fabrication timeline.',
-    decisions: 'Proceed with Gerber release after schematic review sign-off.',
-    remarks: '',
-  }
-  const m2 = {
-    ...base(),
-    title: 'Orion RF Laminate Recovery Call',
-    projectId: orion.id,
-    date: d(-1),
-    participants: 'Me, Program Manager, Nova CAM team',
-    summary: 'Discussed Megatron-6 material shortage and expedite plan.',
-    decisions: 'Nova to provide revised fabrication schedule within 48 hours.',
-    remarks: '',
-  }
-  const meetings = [m1, m2]
-  const meetingActions = [
-    { ...base(), meetingId: m1.id, action: 'Complete final load board Gerber review', assignee: 'Me', dueDate: d(0), status: 'Open', taskId: t3.id },
-    { ...base(), meetingId: m1.id, action: 'Confirm coaxial pogo pin-map with Meridian', assignee: 'Me', dueDate: d(1), status: 'Open', taskId: t5.id },
-    { ...base(), meetingId: m2.id, action: 'Chase revised RF PCB fabrication schedule', assignee: 'Nova', dueDate: d(-3), status: 'Open', taskId: t1.id },
-  ]
-
-  // ---------- Risks & Issues ----------
-  const risks = [
-    {
-      ...base(),
-      title: 'Megatron-6 RF laminate shortage delays PCB',
-      projectId: orion.id,
-      description: 'High-speed RF laminate has extended lead time.',
-      probability: 'High',
-      impact: 'High',
-      level: 'High',
-      mitigation: 'Qualify alternate Rogers 4350B core stack-up with Nova.',
-      owner: 'Me',
-      status: 'Open',
-    },
-    {
-      ...base(),
-      title: 'Pogo pin wear before 50k qualification touchdowns',
-      projectId: falcon.id,
-      description: 'Fine-pitch pins may wear early at high current.',
-      probability: 'Medium',
-      impact: 'Medium',
-      level: 'Medium',
-      mitigation: 'Order spare pogo pin set and run DOE A-001.',
-      owner: 'Me',
-      status: 'Mitigating',
-    },
-  ]
-  const issues = [
-    {
-      ...base(),
-      title: 'Impedance mismatch on 28GHz RF launch trace',
-      projectId: orion.id,
-      workstreamId: wOrionPcb.id,
-      description: 'Simulated return loss is -11dB vs -15dB target.',
-      rootCause: 'Via anti-pad diameter too small on L3-L6.',
-      correctiveAction: 'Widen anti-pad and re-simulate 3D EM model.',
-      responsible: 'Me',
-      dateRaised: d(-12),
-      targetDate: d(2),
-      actualDate: '',
-      status: 'In Progress',
-    },
-    {
-      ...base(),
-      title: 'Socket lid clearance clash with decoupling cap',
-      projectId: falcon.id,
-      workstreamId: wFalconSock.id,
-      description: 'Socket latch touches C142 capacitor body.',
-      rootCause: 'Component keep-out zone updated in rev 2 drawing.',
-      correctiveAction: 'Shift C142 outward by 1.8 mm.',
-      responsible: 'Me',
-      dateRaised: d(-6),
-      targetDate: d(1),
-      actualDate: '',
-      status: 'In Progress',
-    },
-  ]
-
-  // ---------- 16 Activity Logs so "Recent Activities (Latest 15)" is fully populated ----------
-  const sampleLogs = [
-    { ...base(), entity: 'Deliverable', entityId: wFalconStiff.id, projectId: falcon.id, action: 'Status Changed' as const, message: '240101.Stiffener HW Status: In Delivery → Delivered', createdAt: new Date(Date.now() - 1000 * 60 * 18).toISOString() },
-    { ...base(), entity: 'PO', entityId: wFalconSock.id, projectId: falcon.id, action: 'Status Changed' as const, message: 'PO-4500728 (240101.Socket) HW Status → In Delivery', createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString() },
-    { ...base(), entity: 'Task', entityId: t3.id, projectId: falcon.id, action: 'Updated' as const, message: 'Task "Complete final load board Gerber & drill review" progress → 90%', createdAt: new Date(Date.now() - 1000 * 60 * 95).toISOString() },
-    { ...base(), entity: 'Project', entityId: orion.id, projectId: orion.id, action: 'Status Changed' as const, message: 'HRS 240102 (OR5G-200 RF) status: In Progress → Delayed', createdAt: new Date(Date.now() - 1000 * 60 * 160).toISOString() },
-    { ...base(), entity: 'Task', entityId: t4.id, projectId: doeWork.id, action: 'Updated' as const, message: 'DOE A-001 task "Collect 25k insertion CRes data" progress → 70%', createdAt: new Date(Date.now() - 1000 * 60 * 240).toISOString() },
-    { ...base(), entity: 'Commercial', entityId: wNovaThermal.id, projectId: novaAi.id, action: 'Updated' as const, message: 'PO-4500760 issued for 240104.Active Thermal Chuck (USD 12,900)', createdAt: new Date(Date.now() - 1000 * 60 * 320).toISOString() },
-    { ...base(), entity: 'Milestone', entityId: falcon.id, projectId: falcon.id, action: 'Updated' as const, message: 'Milestone "Drawing Approval Cut-off" status → In Progress', createdAt: new Date(Date.now() - 1000 * 60 * 410).toISOString() },
-    { ...base(), entity: 'Quotation', entityId: wAtlasProbeCard.id, projectId: atlas.id, action: 'Created' as const, message: 'Quotation Q-FFPS-8821 added for 240103.Probe Card', createdAt: new Date(Date.now() - 1000 * 60 * 520).toISOString() },
-    { ...base(), entity: 'Task', entityId: t8.id, projectId: novaAi.id, action: 'Created' as const, message: 'Task "Run 3D EM simulation on SERDES differential pairs" created', createdAt: new Date(Date.now() - 1000 * 60 * 680).toISOString() },
-    { ...base(), entity: 'Supplier', entityId: formfactor.id, projectId: '', action: 'Created' as const, message: 'Supplier "FormFactor Probe Systems" added with 2 contacts', createdAt: new Date(Date.now() - 1000 * 60 * 840).toISOString() },
-    { ...base(), entity: 'PET', entityId: wOrionHandler.id, projectId: orion.id, action: 'Created' as const, message: 'PET-24-0151 approved for 240102.Handler Kit', createdAt: new Date(Date.now() - 1000 * 60 * 1100).toISOString() },
-    { ...base(), entity: 'Project', entityId: webWork.id, projectId: webWork.id, action: 'Updated' as const, message: 'Non-NPI Work "Web Development A-002" progress → 50%', createdAt: new Date(Date.now() - 1000 * 60 * 1440).toISOString() },
-    { ...base(), entity: 'PO', entityId: wFalconPcb.id, projectId: falcon.id, action: 'Created' as const, message: 'PO-4500711 issued to Nova Circuits for 240101.PCB', createdAt: new Date(Date.now() - 1000 * 60 * 1900).toISOString() },
-    { ...base(), entity: 'Project', entityId: bmsQual.id, projectId: bmsQual.id, action: 'Status Changed' as const, message: 'HRS 240105 (BM480 BMS) status → On Hold', createdAt: new Date(Date.now() - 1000 * 60 * 2400).toISOString() },
-    { ...base(), entity: 'Deliverable', entityId: wLynxSock.id, projectId: lynx.id, action: 'Status Changed' as const, message: '239804.Socket status: In Progress → Completed', createdAt: new Date(Date.now() - 1000 * 60 * 3000).toISOString() },
-    { ...base(), entity: 'Project', entityId: falcon.id, projectId: falcon.id, action: 'Created' as const, message: 'HRS 240101 (FX7200 PMIC) created', createdAt: new Date(Date.now() - 1000 * 60 * 3600).toISOString() },
-  ]
-
-  await db.transaction('rw', db.tables, async () => {
-    await db.suppliers.bulkPut(suppliers as never)
-    await db.projects.bulkPut(projects as never)
-    await db.workstreams.bulkPut(workstreams as never)
-    await db.projectSuppliers.bulkPut(projectSuppliers as never)
-    await db.tasks.bulkPut(tasks as never)
-    await db.milestones.bulkPut(milestones as never)
-    await db.quotations.bulkPut(quotations as never)
-    await db.petRecords.bulkPut(petRecords as never)
-    await db.poRecords.bulkPut(poRecords as never)
-    await db.meetings.bulkPut(meetings as never)
-    await db.meetingActions.bulkPut(meetingActions as never)
-    await db.risks.bulkPut(risks as never)
-    await db.issues.bulkPut(issues as never)
-    await db.activityLogs.bulkPut(sampleLogs as never)
-    await logActivity('Project', falcon.id, falcon.id, 'Updated', 'Sample NPI & Non-NPI dataset loaded', true)
+  await db.transaction('rw', [db.projects, db.workstreams, db.tasks, db.milestones, db.activityLogs], async () => {
+    await db.projects.bulkAdd(projects)
+    await db.workstreams.bulkAdd(workstreams)
+    await db.tasks.bulkAdd(tasks)
+    await db.milestones.bulkAdd(milestones)
+    await db.activityLogs.bulkAdd(logs)
   })
 }
 
-// Removes ONLY records flagged as sample. Records you created yourself stay.
-// A user-created record that points at a sample project/supplier is cleaned up too, to avoid broken links.
+export async function hasSampleData(): Promise<boolean> {
+  const rows = await db.projects.toArray()
+  return rows.some((r) => !!r.isSample)
+}
+
 export async function clearSampleData() {
   await db.transaction('rw', db.tables, async () => {
-    const sampleProjectIds = (
-      await db.projects
-        .filter((p) => !!p.isSample || SAMPLE_PROJECT_CODES.includes(p.code))
-        .primaryKeys()
-    ) as string[]
-    const sampleSupplierIds = (
-      await db.suppliers
-        .filter((s) => !!s.isSample || SAMPLE_SUPPLIER_NAMES.includes(s.name))
-        .primaryKeys()
-    ) as string[]
-
-    await db.projects.bulkDelete(sampleProjectIds)
-    await db.suppliers.bulkDelete(sampleSupplierIds)
-    for (const t of db.tables) await t.filter((r) => !!r.isSample).delete()
-
-    // Remove leftovers that referenced deleted sample projects / suppliers
-    const projectTables = [
-      db.workstreams,
-      db.projectSuppliers,
-      db.tasks,
-      db.milestones,
-      db.quotations,
-      db.petRecords,
-      db.prRecords,
-      db.poRecords,
-      db.meetings,
-      db.risks,
-      db.issues,
-      db.activityLogs,
-    ]
-    for (const t of projectTables) await t.where('projectId').anyOf(sampleProjectIds).delete()
-    await db.projectSuppliers.where('supplierId').anyOf(sampleSupplierIds).delete()
-    for (const t of [db.workstreams, db.tasks, db.quotations, db.petRecords, db.prRecords, db.poRecords]) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (t as any).where('supplierId').anyOf(sampleSupplierIds).modify({ supplierId: '' })
+    for (const t of db.tables) {
+      await t.filter((r: { isSample?: boolean }) => !!r.isSample).delete()
     }
-    // Remove meeting actions whose meeting no longer exists
-    const meetingIds = new Set((await db.meetings.toCollection().primaryKeys()) as string[])
-    await db.meetingActions.filter((a) => !meetingIds.has(a.meetingId)).delete()
   })
 }

@@ -1,26 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type {
-  ActivityLog, Issue, Meeting, MeetingAction, Milestone, PetRecord, PoRecord, PrRecord,
-  Project, ProjectSupplier, Quotation, Risk, Supplier, Task, Workstream,
-} from '@/types'
+import type { ActivityLog, Milestone, Project, Task, Workstream } from '@/types'
 
 // The local browser database. Each property below is one table.
-// The text after the "id" in .stores() lists the fields we can search/filter quickly (indexes).
-export class NpiDatabase extends Dexie {
+export class ProductDatabase extends Dexie {
   projects!: EntityTable<Project, 'id'>
   workstreams!: EntityTable<Workstream, 'id'>
-  suppliers!: EntityTable<Supplier, 'id'>
-  projectSuppliers!: EntityTable<ProjectSupplier, 'id'>
   tasks!: EntityTable<Task, 'id'>
   milestones!: EntityTable<Milestone, 'id'>
-  quotations!: EntityTable<Quotation, 'id'>
-  petRecords!: EntityTable<PetRecord, 'id'>
-  prRecords!: EntityTable<PrRecord, 'id'>
-  poRecords!: EntityTable<PoRecord, 'id'>
-  meetings!: EntityTable<Meeting, 'id'>
-  meetingActions!: EntityTable<MeetingAction, 'id'>
-  risks!: EntityTable<Risk, 'id'>
-  issues!: EntityTable<Issue, 'id'>
   activityLogs!: EntityTable<ActivityLog, 'id'>
 
   constructor() {
@@ -29,7 +15,6 @@ export class NpiDatabase extends Dexie {
       projects: 'id, &code, status, priority',
       workstreams: 'id, projectId, supplierId',
       suppliers: 'id, &name',
-      // [projectId+supplierId] is unique, so the same supplier cannot be linked twice to one project
       projectSuppliers: 'id, &[projectId+supplierId], projectId, supplierId',
       tasks: 'id, projectId, workstreamId, supplierId, status, dueDate',
       milestones: 'id, projectId, workstreamId, targetDate',
@@ -48,15 +33,28 @@ export class NpiDatabase extends Dexie {
       petRecords: 'id, projectId, workstreamId, supplierId',
       poRecords: 'id, projectId, workstreamId, supplierId',
     })
+    this.version(3).stores({
+      projects: 'id, &code, status, priority',
+      workstreams: 'id, projectId, category',
+      tasks: 'id, projectId, workstreamId, status, dueDate',
+      milestones: 'id, projectId, workstreamId, targetDate',
+      activityLogs: 'id, projectId, createdAt',
+      suppliers: null,
+      projectSuppliers: null,
+      quotations: null,
+      petRecords: null,
+      prRecords: null,
+      poRecords: null,
+      meetings: null,
+      meetingActions: null,
+      risks: null,
+      issues: null,
+    })
   }
 }
 
-export const db = new NpiDatabase()
+export const db = new ProductDatabase()
 
-// One list of every table name, used by backup / reset / export code.
-export const TABLE_NAMES = [
-  'projects', 'workstreams', 'suppliers', 'projectSuppliers', 'tasks', 'milestones',
-  'quotations', 'petRecords', 'prRecords', 'poRecords', 'meetings', 'meetingActions',
-  'risks', 'issues', 'activityLogs',
-] as const
+// One list of every active table name, used by backup / reset / export code.
+export const TABLE_NAMES = ['projects', 'workstreams', 'tasks', 'milestones', 'activityLogs'] as const
 export type TableName = (typeof TABLE_NAMES)[number]

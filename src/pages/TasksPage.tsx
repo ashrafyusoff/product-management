@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { GanttChart, Plus, Table2 } from 'lucide-react'
 import { useTable } from '@/hooks/useTable'
 import { usePersistedState } from '@/hooks/usePersistedState'
-import { MILESTONE_STATUSES, PRIORITIES, TASK_STATUSES, type Milestone, type Project, type Supplier, type Task, type Workstream } from '@/types'
+import { MILESTONE_STATUSES, PRIORITIES, TASK_STATUSES, type Milestone, type Project, type Task, type Workstream } from '@/types'
 import { Button, Card, ConfirmDialog, EmptyState, Input, Loading, Select } from '@/components/ui'
 import { TaskForm } from '@/features/tasks/TaskForm'
 import { MilestoneForm } from '@/features/tasks/MilestoneForm'
@@ -21,14 +21,12 @@ export function TasksPage() {
   const milestones = useTable<Milestone>('milestones')
   const projects = useTable<Project>('projects')
   const workstreams = useTable<Workstream>('workstreams')
-  const suppliers = useTable<Supplier>('suppliers')
   const [params, setParams] = useSearchParams()
 
   const [section, setSection] = usePersistedState<'tasks' | 'milestones'>('npi.tasks.section', 'tasks')
   const [view, setView] = usePersistedState<'table' | 'timeline'>('npi.tasks.view', 'table')
   const [search, setSearch] = usePersistedState<string>('npi.tasks.search', '')
   const [fProject, setFProject] = usePersistedState<string>('npi.tasks.fProject', '')
-  const [fSupplier, setFSupplier] = usePersistedState<string>('npi.tasks.fSupplier', '')
   const [fStatus, setFStatus] = usePersistedState<string>('npi.tasks.fStatus', '')
   const [fPriority, setFPriority] = usePersistedState<string>('npi.tasks.fPriority', '')
   const [onlyOverdue, setOnlyOverdue] = usePersistedState<boolean>('npi.tasks.onlyOverdue', false)
@@ -50,13 +48,12 @@ export function TasksPage() {
     const q = search.trim().toLowerCase()
     return (tasks ?? [])
       .filter((t) => !fProject || t.projectId === fProject)
-      .filter((t) => !fSupplier || t.supplierId === fSupplier)
       .filter((t) => !fStatus || t.status === fStatus)
       .filter((t) => !fPriority || t.priority === fPriority)
       .filter((t) => !onlyOverdue || isOverdueTask(t))
       .filter((t) => !q || `${t.name} ${t.assignee} ${t.remarks}`.toLowerCase().includes(q))
       .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
-  }, [tasks, search, fProject, fSupplier, fStatus, fPriority, onlyOverdue])
+  }, [tasks, search, fProject, fStatus, fPriority, onlyOverdue])
 
   const filteredMilestones = useMemo(() =>
     (milestones ?? [])
@@ -66,9 +63,9 @@ export function TasksPage() {
       .sort((a, b) => a.targetDate.localeCompare(b.targetDate)),
   [milestones, search, fProject, fStatus])
 
-  if (!tasks || !milestones || !projects || !workstreams || !suppliers) return <Loading />
+  if (!tasks || !milestones || !projects || !workstreams) return <Loading />
 
-  const projectOptions = [{ value: '', label: 'All projects' }, ...projects.map((p) => ({ value: p.id, label: p.code }))]
+  const projectOptions = [{ value: '', label: 'All products' }, ...projects.map((p) => ({ value: p.id, label: p.packageType && !p.isNonNpi ? `${p.name} (${p.packageType})` : p.name || p.code }))]
   const switchSection = (s: 'tasks' | 'milestones') => {
     setSection(s)
     const allowed = s === 'tasks' ? (TASK_STATUSES as readonly string[]) : (MILESTONE_STATUSES as readonly string[])
@@ -86,9 +83,7 @@ export function TasksPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <Input placeholder={section === 'tasks' ? 'Search tasks…' : 'Search milestones…'} value={search} onChange={(e) => setSearch(e.target.value)} className="!w-56" />
-        <Select className="!w-36" value={fProject} onChange={(e) => setFProject(e.target.value)} options={projectOptions} />
-        {section === 'tasks' && <Select className="!w-48" value={fSupplier} onChange={(e) => setFSupplier(e.target.value)}
-          options={[{ value: '', label: 'All suppliers' }, ...suppliers.map((s) => ({ value: s.id, label: s.name }))]} />}
+        <Select className="!w-48" value={fProject} onChange={(e) => setFProject(e.target.value)} options={projectOptions} />
         <Select className="!w-44" value={fStatus} onChange={(e) => setFStatus(e.target.value)} options={all('All statuses', section === 'tasks' ? TASK_STATUSES : MILESTONE_STATUSES)} />
         {section === 'tasks' && <Select className="!w-36" value={fPriority} onChange={(e) => setFPriority(e.target.value)} options={all('All priorities', PRIORITIES)} />}
         {section === 'tasks' && (
@@ -113,7 +108,7 @@ export function TasksPage() {
           filteredTasks.length === 0 ? (
             <EmptyState title={tasks.length === 0 ? 'No tasks yet' : 'No tasks match your filters'} hint={tasks.length === 0 ? 'Click "Add Task" to create your first task.' : 'Try clearing some filters.'} />
           ) : view === 'table' ? (
-            <TaskTable tasks={filteredTasks} projects={projects} workstreams={workstreams} suppliers={suppliers}
+            <TaskTable tasks={filteredTasks} projects={projects} workstreams={workstreams}
               onEdit={(t) => { setTaskEditing(t); setTaskOpen(true) }} onDelete={setTaskDeleting} />
           ) : (
             <TaskTimeline tasks={filteredTasks} projects={projects} />
@@ -130,7 +125,7 @@ export function TasksPage() {
       <MilestoneForm open={msOpen} milestone={msEditing} defaultProjectId={fProject} onClose={() => setMsOpen(false)} />
       <ConfirmDialog open={!!taskDeleting} title="Delete task?" onCancel={() => setTaskDeleting(undefined)}
         onConfirm={async () => { try { await deleteTask(taskDeleting!.id) } catch (e) { setError(errorMessage(e)) } setTaskDeleting(undefined) }}
-        message={<>Delete <b>{taskDeleting?.name}</b>? Any meeting action items linked to it will be kept but unlinked.</>} />
+        message={<>Delete <b>{taskDeleting?.name}</b>?</>} />
       <ConfirmDialog open={!!msDeleting} title="Delete milestone?" onCancel={() => setMsDeleting(undefined)}
         onConfirm={async () => { try { await deleteMilestone(msDeleting!.id) } catch (e) { setError(errorMessage(e)) } setMsDeleting(undefined) }}
         message={<>Delete milestone <b>{msDeleting?.name}</b>?</>} />
