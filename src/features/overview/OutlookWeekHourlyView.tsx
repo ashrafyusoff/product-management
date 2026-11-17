@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CheckSquare, ClipboardPaste, Copy, Flag, Scissors } from 'lucide-react'
+import { Check, CheckSquare, ClipboardPaste, Copy, Flag, Scissors } from 'lucide-react'
 import type { Milestone, Task } from '@/types'
 import { Badge } from '@/components/ui'
 import { cn } from '@/utils/helpers'
@@ -10,7 +10,8 @@ export interface CalendarItemRef {
   name: string
 }
 
-export interface CalendarClipboardItem extends CalendarItemRef {
+export interface CalendarClipboard {
+  items: CalendarItemRef[]
   mode: 'copy' | 'cut'
 }
 
@@ -140,12 +141,14 @@ export function OutlookWeekHourlyView({
   itemsByDay,
   today,
   projectCode,
-  selectedItem,
+  selectedIds,
   selectedDay,
   draggingId,
   clipboard,
+  priorityFilter,
   onSelectDay,
-  onSelectItem,
+  onItemClick,
+  onToggleSelect,
   onEditTask,
   onEditMilestone,
   onDragStart,
@@ -162,12 +165,14 @@ export function OutlookWeekHourlyView({
   itemsByDay: Map<string, { tasks: Task[]; milestones: Milestone[] }>
   today: string
   projectCode: (pid: string) => string
-  selectedItem: CalendarItemRef | null
+  selectedIds: Set<string>
   selectedDay: string
   draggingId: string
-  clipboard: CalendarClipboardItem | null
+  clipboard: CalendarClipboard | null
+  priorityFilter: string | null
   onSelectDay: (ymd: string) => void
-  onSelectItem: (ref: CalendarItemRef) => void
+  onItemClick: (e: React.MouseEvent, ref: CalendarItemRef, dayYmd: string, openEdit: () => void) => void
+  onToggleSelect: (ref: CalendarItemRef, dayYmd: string) => void
   onEditTask?: (t: Task) => void
   onEditMilestone?: (m: Milestone) => void
   onDragStart: (e: React.DragEvent, ref: CalendarItemRef) => void
@@ -295,7 +300,7 @@ export function OutlookWeekHourlyView({
                     <button
                       onClick={(e) => { e.stopPropagation(); onPaste(day.ymd, week.ww) }}
                       className="inline-flex items-center gap-0.5 rounded bg-primary/10 hover:bg-primary text-primary hover:text-white px-1.5 py-0.5 text-[10px] font-medium transition-colors"
-                      title={`Paste "${clipboard.name}" onto ${day.dayLabel}`}
+                      title={`Paste ${clipboard.items.length} item(s) onto ${day.dayLabel}`}
                     >
                       <ClipboardPaste className="h-3 w-3" /> Paste
                     </button>
@@ -318,20 +323,22 @@ export function OutlookWeekHourlyView({
                 <div key={day.ymd} className="p-1.5 border-r last:border-r-0 border-slate-200 flex flex-col gap-1 min-w-0">
                   {dayMilestones.map((m) => {
                     const ref: CalendarItemRef = { kind: 'milestone', id: m.id, name: m.name }
-                    const isCut = clipboard?.mode === 'cut' && clipboard.id === m.id
-                    const isSelected = selectedItem?.id === m.id
+                    const isCut = clipboard?.mode === 'cut' && clipboard.items.some((i) => i.id === m.id)
+                    const isSelected = selectedIds.has(m.id)
+                    const isDimmed = !!priorityFilter
                     return (
                       <div
                         key={m.id}
                         draggable
                         onDragStart={(e) => onDragStart(e, ref)}
                         onDragEnd={onDragEnd}
-                        onClick={(e) => { e.stopPropagation(); onSelectItem(ref); onSelectDay(day.ymd); onEditMilestone?.(m) }}
-                        title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to select & edit`}
+                        onClick={(e) => onItemClick(e, ref, day.ymd, () => onEditMilestone?.(m))}
+                        title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to edit · Ctrl+Click to multi-select`}
                         className={cn(
-                          'group relative cursor-grab active:cursor-grabbing rounded border px-1.5 py-1 text-[11px] shadow-sm select-none min-w-0',
+                          'group relative cursor-grab active:cursor-grabbing rounded border px-1.5 py-1 text-[11px] shadow-sm select-none min-w-0 transition-opacity',
                           milestoneCardStyle(m, today),
                           isSelected && 'ring-2 ring-primary',
+                          isDimmed && !isSelected && 'opacity-25',
                           (draggingId === m.id || isCut) && 'opacity-45 border-dashed',
                         )}
                       >
@@ -415,8 +422,9 @@ export function OutlookWeekHourlyView({
                   const widthPct = 100 / totalCols
                   const leftPct = col * widthPct
                   const ref: CalendarItemRef = { kind: 'task', id: t.id, name: t.name }
-                  const isCut = clipboard?.mode === 'cut' && clipboard.id === t.id
-                  const isSelected = selectedItem?.id === t.id
+                  const isCut = clipboard?.mode === 'cut' && clipboard.items.some((i) => i.id === t.id)
+                  const isSelected = selectedIds.has(t.id)
+                  const isDimmed = !!priorityFilter && (priorityFilter === 'Completed' ? t.status !== 'Completed' : t.status === 'Completed' || t.priority !== priorityFilter)
                   const isCompact = heightPx < 42
 
                   return (
@@ -425,22 +433,36 @@ export function OutlookWeekHourlyView({
                       draggable
                       onDragStart={(e) => onDragStart(e, ref)}
                       onDragEnd={onDragEnd}
-                      onClick={(e) => { e.stopPropagation(); onSelectItem(ref); onSelectDay(day.ymd); onEditTask?.(t) }}
+                      onClick={(e) => onItemClick(e, ref, day.ymd, () => onEditTask?.(t))}
                       style={{
                         top: topPx,
                         height: heightPx,
                         left: `calc(${leftPct}% + 2px)`,
                         width: `calc(${widthPct}% - 4px)`,
                       }}
-                      title={`Task: ${t.name}\nTime: ${startLabel} – ${endLabel}\nProject: ${projectCode(t.projectId)}\nStatus: ${t.status}\nClick to select & edit`}
+                      title={`Task: ${t.name}\nTime: ${startLabel} – ${endLabel}\nPriority: ${t.priority}\nStatus: ${t.status}\nClick to edit · Ctrl+Click or checkbox to multi-select`}
                       className={cn(
-                        'group absolute z-10 cursor-grab active:cursor-grabbing rounded border px-1.5 py-1 shadow-sm overflow-hidden select-none transition-shadow hover:z-20 hover:shadow-md',
+                        'group absolute z-10 cursor-grab active:cursor-grabbing rounded border px-1.5 py-1 shadow-sm overflow-hidden select-none transition-all hover:z-20 hover:shadow-md',
                         taskCardStyle(t, today),
                         isSelected && 'ring-2 ring-primary z-20',
+                        isDimmed && !isSelected && 'opacity-25',
                         (draggingId === t.id || isCut) && 'opacity-45 border-dashed',
                       )}
                     >
                       <div className="flex items-start gap-1 min-w-0 h-full">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onToggleSelect(ref, day.ymd) }}
+                          title="Select / deselect for multi-action"
+                          className={cn(
+                            'mt-0.5 h-3.5 w-3.5 shrink-0 rounded border flex items-center justify-center transition-opacity',
+                            isSelected
+                              ? 'bg-primary border-primary text-white opacity-100'
+                              : 'border-slate-400/70 bg-white/80 opacity-0 group-hover:opacity-100',
+                          )}
+                        >
+                          {isSelected && <Check className="h-2.5 w-2.5" />}
+                        </button>
                         <CheckSquare className="h-3 w-3 shrink-0 mt-0.5" />
                         <div className="min-w-0 flex-1">
                           <p className="text-[11px] font-semibold truncate leading-tight">
@@ -448,7 +470,7 @@ export function OutlookWeekHourlyView({
                           </p>
                           {!isCompact && (
                             <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
-                              {startLabel}–{endLabel} · {projectCode(t.projectId)}
+                              {startLabel}–{endLabel} · {projectCode(t.projectId)} · {t.priority}
                             </p>
                           )}
                         </div>

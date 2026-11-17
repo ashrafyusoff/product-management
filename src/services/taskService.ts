@@ -113,6 +113,19 @@ export async function duplicateTaskToDate(id: string, newDueDate: string) {
   })
 }
 
+export async function updateTasksPriority(ids: string[], priority: Task['priority']) {
+  if (ids.length === 0) return
+  const now = nowIso()
+  await db.transaction('rw', [db.tasks, db.activityLogs], async () => {
+    for (const id of ids) {
+      const old = await db.tasks.get(id)
+      if (!old || old.priority === priority) continue
+      await db.tasks.update(id, { priority, updatedAt: now })
+      await logActivity('Task', id, old.projectId, 'Updated', `Task "${old.name}" priority: ${old.priority} → ${priority}`)
+    }
+  })
+}
+
 export const emptyTask = (projectId = ''): TaskInput => ({
   projectId, workstreamId: '', name: '', assignee: '', startDate: todayStr(), dueDate: '',
   startTime: '09:00', endTime: '10:00', completionDate: '',

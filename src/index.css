@@ -140,8 +140,12 @@ html.dark .bg-red-50,
 html.dark .bg-rose-50 {
   background-color: rgba(244, 63, 94, 0.18) !important;
 }
+html.dark .bg-sky-100\/90 {
+  background-color: rgba(14, 165, 233, 0.24) !important;
+}
 html.dark .bg-red-100\/90,
-html.dark .bg-rose-100 {
+html.dark .bg-rose-100,
+html.dark .bg-rose-100\/90 {
   background-color: rgba(244, 63, 94, 0.25) !important;
 }
 html.dark .bg-violet-50,
@@ -174,6 +178,7 @@ html.dark .text-slate-400 {
 }
 
 html.dark .text-sky-700,
+html.dark .text-sky-950,
 html.dark .text-blue-700,
 html.dark .text-blue-800,
 html.dark .text-blue-900,
@@ -235,6 +240,7 @@ html.dark .border-slate-200\/70,
 html.dark .border-slate-300 {
   border-color: #334155 !important;
 }
+html.dark .border-sky-400,
 html.dark .border-blue-200,
 html.dark .border-blue-300,
 html.dark .border-blue-400 {
@@ -257,6 +263,7 @@ html.dark .border-orange-300 {
 }
 html.dark .border-rose-200,
 html.dark .border-rose-300,
+html.dark .border-rose-400,
 html.dark .border-rose-500 {
   border-color: rgba(251, 113, 133, 0.45) !important;
 }

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, CheckSquare, ChevronLeft, ChevronRight, ClipboardPaste, Clock, Copy, Flag, GripVertical, Scissors, X } from 'lucide-react'
-import type { Milestone, Project, Task } from '@/types'
+import { AlertCircle, CalendarDays, Check, CheckSquare, ChevronLeft, ChevronRight, ClipboardPaste, Clock, Copy, Flag, GripVertical, Scissors, X } from 'lucide-react'
+import type { Milestone, Priority, Project, Task } from '@/types'
 import { Badge, Button, Card } from '@/components/ui'
 import { usePersistedState } from '@/hooks/usePersistedState'
-import { duplicateTaskToDate, rescheduleTask } from '@/services/taskService'
+import { duplicateTaskToDate, rescheduleTask, updateTasksPriority } from '@/services/taskService'
 import { duplicateMilestoneToDate, rescheduleMilestone } from '@/services/milestoneService'
 import { cn, todayStr } from '@/utils/helpers'
-import { OutlookWeekHourlyView } from './OutlookWeekHourlyView'
+import { OutlookWeekHourlyView, type CalendarClipboard, type CalendarItemRef } from './OutlookWeekHourlyView'
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const
 const MINI_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const
@@ -104,29 +104,36 @@ interface ItemRef {
   name: string
 }
 
-interface ClipboardItem extends ItemRef {
-  mode: 'copy' | 'cut'
+const PRIORITY_RANK: Record<Priority, number> = {
+  Critical: 0,
+  High: 1,
+  Medium: 2,
+  Low: 3,
 }
 
-// Clear, vivid colour styling so tasks and milestones are immediately distinguishable
-function taskCardStyle(t: Task, today: string): string {
+const PRIORITY_LEGEND: { priority: Priority; boxCls: string }[] = [
+  { priority: 'Critical', boxCls: 'bg-rose-500 border-rose-700' },
+  { priority: 'High', boxCls: 'bg-amber-400 border-amber-600' },
+  { priority: 'Medium', boxCls: 'bg-sky-500 border-sky-700' },
+  { priority: 'Low', boxCls: 'bg-slate-400 border-slate-600' },
+]
+
+// Task colour is driven by Priority (Completed stays emerald green).
+function taskCardStyle(t: Task, _today: string): string {
   if (t.status === 'Completed') {
     return 'border-emerald-400 border-l-4 border-l-emerald-600 bg-emerald-100/90 text-emerald-950'
   }
-  if (t.dueDate && t.dueDate < today) {
-    return 'border-red-400 border-l-4 border-l-red-600 bg-red-100/90 text-red-950'
+  switch (t.priority) {
+    case 'Critical':
+      return 'border-rose-400 border-l-4 border-l-rose-600 bg-rose-100/90 text-rose-950'
+    case 'High':
+      return 'border-amber-400 border-l-4 border-l-amber-500 bg-amber-100/90 text-amber-950'
+    case 'Medium':
+      return 'border-sky-400 border-l-4 border-l-sky-600 bg-sky-100/90 text-sky-950'
+    case 'Low':
+    default:
+      return 'border-slate-300 border-l-4 border-l-slate-500 bg-slate-100 text-slate-900'
   }
-  if (t.status === 'On Hold') {
-    return 'border-amber-400 border-l-4 border-l-amber-500 bg-amber-100/90 text-amber-950'
-  }
-  if (t.status === 'Under Review') {
-    return 'border-cyan-400 border-l-4 border-l-cyan-600 bg-cyan-100/90 text-cyan-950'
-  }
-  if (t.status === 'Not Started') {
-    return 'border-slate-300 border-l-4 border-l-slate-500 bg-slate-100 text-slate-900'
-  }
-  // In Progress
-  return 'border-blue-400 border-l-4 border-l-blue-600 bg-blue-100/90 text-blue-950'
 }
 
 function milestoneCardStyle(m: Milestone, today: string): string {
@@ -172,10 +179,13 @@ export function WorkWeekCalendar({
   const [filterProject, setFilterProject] = usePersistedState<string>('npi.calendar.filterProject', '')
   const [dragOverCell, setDragOverCell] = useState<string>('')
   const [draggingId, setDraggingId] = useState<string>('')
-  const [selectedItem, setSelectedItem] = useState<ItemRef | null>(null)
+  const [selectedItems, setSelectedItems] = useState<CalendarItemRef[]>([])
   const [selectedDay, setSelectedDay] = useState<string>(today)
-  const [clipboard, setClipboard] = useState<ClipboardItem | null>(null)
+  const [clipboard, setClipboard] = useState<CalendarClipboard | null>(null)
+  const [priorityFilter, setPriorityFilter] = useState<string | null>(null)
   const [toast, setToast] = useState<string>('')
+
+  const selectedIds = useMemo(() => new Set(selectedItems.map((i) => i.id)), [selectedItems])
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -200,7 +210,7 @@ export function WorkWeekCalendar({
   }
 
   const weeks = useMemo(() => {
-    const count = viewMode === 'week' ? 1 : Math.max(1, Math.min(10, weeksToShow))
+    const count = viewMode === 'week' ? 1 : Math.max(4, Math.min(10, weeksToShow))
     return Array.from({ length: count }, (_, wIdx) => {
       const monday = addDays(baseMonday, wIdx * 7)
       const ww = getIsoWeek(monday)
@@ -228,13 +238,27 @@ export function WorkWeekCalendar({
   // Set of Mondays currently displayed in the workweek schedule (for highlighting in the mini calendar)
   const displayedMondays = useMemo(() => new Set(weeks.map((w) => w.mondayYmd)), [weeks])
 
+  // Overdue basket: open tasks whose dueDate < today (sorted by Priority then dueDate)
+  const overdueTasks = useMemo(() => {
+    return tasks
+      .filter((t) => t.status !== 'Completed' && t.status !== 'Cancelled' && !!t.dueDate && t.dueDate < today)
+      .filter((t) => !filterProject || t.projectId === filterProject)
+      .sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.dueDate.localeCompare(b.dueDate))
+  }, [tasks, today, filterProject])
+
+  const overdueTaskIds = useMemo(() => new Set(overdueTasks.map((t) => t.id)), [overdueTasks])
+
   // Set of exact dates that have tasks or milestones (so we can bold them in the mini calendar like Outlook)
   const busyDates = useMemo(() => {
     const s = new Set<string>()
-    for (const t of tasks) if (t.status !== 'Cancelled' && t.dueDate && (!filterProject || t.projectId === filterProject)) s.add(t.dueDate)
+    for (const t of tasks) {
+      if (t.status !== 'Cancelled' && t.dueDate && !overdueTaskIds.has(t.id) && (!filterProject || t.projectId === filterProject)) {
+        s.add(t.dueDate)
+      }
+    }
     for (const m of milestones) if (m.targetDate && (!filterProject || m.projectId === filterProject)) s.add(m.targetDate)
     return s
-  }, [tasks, milestones, filterProject])
+  }, [tasks, milestones, overdueTaskIds, filterProject])
 
   // Build 2 stacked mini-months anchored on the Thursday of the first displayed workweek
   const miniMonths = useMemo(() => {
@@ -253,12 +277,15 @@ export function WorkWeekCalendar({
   const itemsByDay = useMemo(() => {
     const map = new Map<string, { tasks: Task[]; milestones: Milestone[] }>()
     for (const t of tasks) {
-      if (t.status === 'Cancelled' || !t.dueDate) continue
+      if (t.status === 'Cancelled' || !t.dueDate || overdueTaskIds.has(t.id)) continue
       if (filterProject && t.projectId !== filterProject) continue
       const key = snapToWorkdayYmd(t.dueDate)
       const bucket = map.get(key) ?? { tasks: [], milestones: [] }
       bucket.tasks.push(t)
       map.set(key, bucket)
+    }
+    for (const bucket of map.values()) {
+      bucket.tasks.sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority])
     }
     for (const m of milestones) {
       if (!m.targetDate) continue
@@ -269,48 +296,96 @@ export function WorkWeekCalendar({
       map.set(key, bucket)
     }
     return map
-  }, [tasks, milestones, filterProject])
+  }, [tasks, milestones, overdueTaskIds, filterProject])
 
-  function handleCopy(item: ItemRef) {
-    setClipboard({ ...item, mode: 'copy' })
-    showToast(`Copied "${item.name}" — click Paste on any date`)
+  function toggleSelectItem(ref: CalendarItemRef, dayYmd?: string) {
+    if (dayYmd) setSelectedDay(dayYmd)
+    setSelectedItems((prev) =>
+      prev.some((i) => i.id === ref.id) ? prev.filter((i) => i.id !== ref.id) : [...prev, ref],
+    )
   }
 
-  function handleCut(item: ItemRef) {
-    setClipboard({ ...item, mode: 'cut' })
-    showToast(`Cut "${item.name}" — click Paste on any date to move it`)
+  function handleItemClick(e: React.MouseEvent, ref: CalendarItemRef, dayYmd: string, openEdit: () => void) {
+    e.stopPropagation()
+    setSelectedDay(dayYmd)
+    if (e.ctrlKey || e.metaKey) {
+      toggleSelectItem(ref, dayYmd)
+      return
+    }
+    setSelectedItems([ref])
+    openEdit()
+  }
+
+  function handleCopyItems(items: CalendarItemRef[]) {
+    if (items.length === 0) return
+    setClipboard({ items, mode: 'copy' })
+    showToast(items.length === 1 ? `Copied "${items[0].name}" — click Paste on any date` : `Copied ${items.length} items — click Paste on any date`)
+  }
+
+  function handleCutItems(items: CalendarItemRef[]) {
+    if (items.length === 0) return
+    setClipboard({ items, mode: 'cut' })
+    showToast(items.length === 1 ? `Cut "${items[0].name}" — click Paste on any date to move` : `Cut ${items.length} items — click Paste on any date to move`)
+  }
+
+  function handleCopy(item: CalendarItemRef) {
+    handleCopyItems(selectedIds.has(item.id) && selectedItems.length > 1 ? selectedItems : [item])
+  }
+
+  function handleCut(item: CalendarItemRef) {
+    handleCutItems(selectedIds.has(item.id) && selectedItems.length > 1 ? selectedItems : [item])
   }
 
   async function handlePaste(targetYmd: string, ww?: number) {
-    if (!clipboard) return
+    if (!clipboard || clipboard.items.length === 0) return
     const wwLabel = ww ? `WW${String(ww).padStart(2, '0')} (${targetYmd})` : targetYmd
     try {
+      for (const item of clipboard.items) {
+        if (clipboard.mode === 'cut') {
+          if (item.kind === 'task') await rescheduleTask(item.id, targetYmd)
+          else await rescheduleMilestone(item.id, targetYmd)
+        } else {
+          if (item.kind === 'task') await duplicateTaskToDate(item.id, targetYmd)
+          else await duplicateMilestoneToDate(item.id, targetYmd)
+        }
+      }
+      const n = clipboard.items.length
       if (clipboard.mode === 'cut') {
-        if (clipboard.kind === 'task') await rescheduleTask(clipboard.id, targetYmd)
-        else await rescheduleMilestone(clipboard.id, targetYmd)
-        showToast(`Moved "${clipboard.name}" to ${wwLabel}`)
+        showToast(n === 1 ? `Moved "${clipboard.items[0].name}" to ${wwLabel}` : `Moved ${n} items to ${wwLabel}`)
         setClipboard(null)
       } else {
-        if (clipboard.kind === 'task') await duplicateTaskToDate(clipboard.id, targetYmd)
-        else await duplicateMilestoneToDate(clipboard.id, targetYmd)
-        showToast(`Pasted copy of "${clipboard.name}" to ${wwLabel}`)
+        showToast(n === 1 ? `Pasted copy of "${clipboard.items[0].name}" to ${wwLabel}` : `Pasted ${n} items to ${wwLabel}`)
       }
     } catch {
       // ignore if deleted
     }
   }
 
-  // Keyboard shortcuts: Ctrl+C, Ctrl+X on selected item; Ctrl+V on selected day
+  async function handleBulkPriorityBoxClick(priority: Priority) {
+    const taskIds = selectedItems.filter((i) => i.kind === 'task').map((i) => i.id)
+    if (taskIds.length === 0) {
+      showToast('Select task(s) first, then click a priority color box to change priority')
+      return
+    }
+    try {
+      await updateTasksPriority(taskIds, priority)
+      showToast(`Updated ${taskIds.length} task${taskIds.length > 1 ? 's' : ''} to ${priority} priority`)
+    } catch {
+      // ignore
+    }
+  }
+
+  // Keyboard shortcuts: Ctrl+C, Ctrl+X on selected item(s); Ctrl+V on selected day
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selectedItem) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selectedItems.length > 0) {
         e.preventDefault()
-        handleCopy(selectedItem)
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && selectedItem) {
+        handleCopyItems(selectedItems)
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && selectedItems.length > 0) {
         e.preventDefault()
-        handleCut(selectedItem)
+        handleCutItems(selectedItems)
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && clipboard && selectedDay) {
         e.preventDefault()
         void handlePaste(selectedDay)
@@ -382,9 +457,20 @@ export function WorkWeekCalendar({
       action={
         <div className="flex flex-wrap items-center gap-2 w-full">
           {toast && <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded">{toast}</span>}
+          {selectedItems.length > 0 && (
+            <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs text-emerald-900 font-medium">
+              <span>{selectedItems.length} selected</span>
+              <button onClick={() => handleCopyItems(selectedItems)} className="px-1.5 py-0.5 rounded bg-white border border-emerald-200 hover:bg-emerald-100 text-[11px]" title="Copy selected (Ctrl+C)">Copy</button>
+              <button onClick={() => handleCutItems(selectedItems)} className="px-1.5 py-0.5 rounded bg-white border border-emerald-200 hover:bg-emerald-100 text-[11px]" title="Cut selected (Ctrl+X)">Cut</button>
+              <button onClick={() => setSelectedItems([])} className="hover:text-slate-900" title="Clear selection"><X className="h-3.5 w-3.5" /></button>
+            </div>
+          )}
           {clipboard && (
             <div className="inline-flex items-center gap-1.5 rounded border border-primary/30 bg-primary-soft px-2.5 py-1 text-xs text-primary font-medium">
-              <span>{clipboard.mode === 'cut' ? 'Cut:' : 'Copied:'} {clipboard.name}</span>
+              <span>
+                {clipboard.mode === 'cut' ? 'Cut:' : 'Copied:'}{' '}
+                {clipboard.items.length === 1 ? clipboard.items[0].name : `${clipboard.items.length} items`}
+              </span>
               <button onClick={() => setClipboard(null)} className="hover:text-slate-800" title="Clear clipboard"><X className="h-3.5 w-3.5" /></button>
             </div>
           )}
@@ -432,13 +518,13 @@ export function WorkWeekCalendar({
               <span className="font-medium">Weeks:</span>
               <input
                 type="number"
-                min={1}
+                min={4}
                 max={10}
-                value={weeksToShow}
-                onChange={(e) => setWeeksToShow(Math.max(1, Math.min(10, Number(e.target.value) || 4)))}
+                value={Math.max(4, Math.min(10, weeksToShow))}
+                onChange={(e) => setWeeksToShow(Math.max(4, Math.min(10, Number(e.target.value) || 4)))}
                 className="w-11 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-800 text-center focus:outline-none focus:ring-1 focus:ring-primary"
               />
-              <span className="text-[11px] text-slate-500">(max 10)</span>
+              <span className="text-[11px] text-slate-500">(4–10)</span>
             </label>
           )}
 
@@ -463,56 +549,88 @@ export function WorkWeekCalendar({
         </div>
       }
     >
-      {/* Colour legend + Copy/Cut/Paste instructions */}
+      {/* Interactive Priority Legend: click color box to set selected tasks' priority; click word to dim others */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-blue-500 border border-blue-700" /> Task: In Progress</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-amber-400 border border-amber-600" /> On Hold</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-cyan-400 border border-cyan-600" /> Under Review</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-slate-300 border border-slate-500" /> Not Started</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-purple-500 border border-purple-700" /> Milestone</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-red-500 border border-red-700" /> Overdue</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-emerald-500 border border-emerald-700" /> Completed</span>
+          {PRIORITY_LEGEND.map(({ priority, boxCls }) => {
+            const active = priorityFilter === priority
+            return (
+              <span key={priority} className={cn('inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 transition-all', active && 'bg-emerald-50 ring-1 ring-primary font-semibold')}>
+                <button
+                  type="button"
+                  onClick={() => void handleBulkPriorityBoxClick(priority)}
+                  title={`Click box to set selected task(s) to ${priority}`}
+                  className={cn('h-3.5 w-3.5 rounded-sm border transition-transform hover:scale-110', boxCls)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setPriorityFilter((f) => (f === priority ? null : priority))}
+                  title={`Click word to dim non-${priority} tasks`}
+                  className={cn('hover:text-primary', active ? 'text-primary font-bold underline' : '')}
+                >
+                  {priority}
+                </button>
+              </span>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => setPriorityFilter((f) => (f === 'Completed' ? null : 'Completed'))}
+            title="Click to dim non-completed tasks"
+            className={cn('inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 hover:text-primary', priorityFilter === 'Completed' && 'bg-emerald-50 ring-1 ring-primary font-bold text-primary')}
+          >
+            <span className="h-3.5 w-3.5 rounded-sm bg-emerald-500 border border-emerald-700" /> Completed
+          </button>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3.5 w-3.5 rounded-sm bg-purple-500 border border-purple-700" /> Milestone
+          </span>
+          {priorityFilter && (
+            <button type="button" onClick={() => setPriorityFilter(null)} className="text-[11px] text-primary hover:underline font-medium">
+              Show all
+            </button>
+          )}
         </div>
-        <span className="text-slate-500">Click an item to select &amp; edit on the left · Ctrl+C / Ctrl+X / Ctrl+V or drag &amp; drop to move.</span>
+        <span className="text-slate-500">Click box to set priority · Click word to dim · Ctrl+Click or ☑ to multi-select</span>
       </div>
 
       {/* Split Layout: Left Outlook-style Mini Calendar + Right 5-Day Workweek Schedule */}
       <div className="flex flex-col lg:flex-row -mx-4 -mb-4 border-t border-slate-200">
-        {/* LEFT: Outlook-style 2-Month Mini Calendar (Light Theme) with highlighted displayed workweeks */}
-        <aside className="w-full lg:w-[235px] shrink-0 bg-slate-50/70 text-slate-700 p-3 border-b lg:border-b-0 lg:border-r border-slate-200 select-none">
+        {/* LEFT: Outlook-style 2-Month Mini Calendar + Overdue Basket (height follows right calendar) */}
+        <aside className="w-full lg:w-[235px] shrink-0 lg:relative bg-slate-50/70 text-slate-700 border-b lg:border-b-0 lg:border-r border-slate-200 select-none">
+          <div className="p-3 flex flex-col lg:absolute lg:inset-0">
+            <div className="shrink-0">
           {miniMonths.map((month, mIdx) => (
-            <div key={month.title} className={cn(mIdx > 0 && 'mt-4 pt-3 border-t border-slate-200')}>
-              <div className="flex items-center justify-between mb-2 px-1">
+            <div key={month.title} className={cn(mIdx > 0 && 'mt-2.5 pt-2 border-t border-slate-200')}>
+              <div className="flex items-center justify-between mb-1 px-1">
                 {mIdx === 0 ? (
                   <button
                     onClick={() => shiftMonth(-1)}
                     className="p-0.5 rounded hover:bg-slate-200 text-slate-600"
                     title="Previous month"
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    <ChevronLeft className="h-3.5 w-3.5" />
                   </button>
                 ) : <span className="w-5" />}
-                <span className="text-xs font-bold tracking-wide text-slate-800">{month.title}</span>
+                <span className="text-[11px] font-bold tracking-wide text-slate-800">{month.title}</span>
                 {mIdx === 0 ? (
                   <button
                     onClick={() => shiftMonth(1)}
                     className="p-0.5 rounded hover:bg-slate-200 text-slate-600"
                     title="Next month"
                   >
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                 ) : <span className="w-5" />}
               </div>
 
               {/* Column header: # | MO TU WE TH FR SA SU */}
-              <div className="grid grid-cols-8 text-[10px] font-semibold text-slate-500 text-center pb-1 border-b border-slate-200">
+              <div className="grid grid-cols-8 text-[10px] font-semibold text-slate-500 text-center pb-0.5 border-b border-slate-200">
                 <span className="border-r border-slate-200">#</span>
                 {MINI_DAYS.map((d) => <span key={d}>{d}</span>)}
               </div>
 
               {/* Week rows */}
-              <div className="mt-1 space-y-0.5">
+              <div className="mt-0.5 space-y-0">
                 {month.rows.map((row) => {
                   const isDisplayedWeek = displayedMondays.has(row.mondayYmd)
                   return (
@@ -525,7 +643,7 @@ export function WorkWeekCalendar({
                       {/* Workweek number column */}
                       <span
                         className={cn(
-                          'py-1 border-r border-slate-200 text-[10px] font-medium',
+                          'py-0.5 border-r border-slate-200 text-[10px] font-medium',
                           isDisplayedWeek ? 'bg-blue-100 text-blue-800 font-bold rounded-l border-y border-l border-blue-300' : 'text-slate-400 group-hover:text-slate-700',
                         )}
                       >
@@ -535,7 +653,7 @@ export function WorkWeekCalendar({
                       {/* 7 days of the week; MO..FR highlighted when this workweek is displayed */}
                       {row.days.map((d, dIdx) => {
                         if (d.hidden) {
-                          return <span key={d.ymd} className="py-1" />
+                          return <span key={d.ymd} className="py-0.5" />
                         }
                         const isToday = d.ymd === today
                         const inWorkweekHighlight = isDisplayedWeek && d.isWeekday
@@ -546,7 +664,7 @@ export function WorkWeekCalendar({
                           <span
                             key={d.ymd}
                             className={cn(
-                              'py-1 transition-colors',
+                              'py-0.5 transition-colors',
                               inWorkweekHighlight && 'bg-blue-100/75 border-y border-blue-300 text-slate-800 font-medium',
                               isFirstHighlighted && 'border-l border-blue-300',
                               isLastHighlighted && 'rounded-r border-r border-blue-300',
@@ -567,9 +685,69 @@ export function WorkWeekCalendar({
               </div>
             </div>
           ))}
-          <p className="text-[10px] text-slate-500 mt-3 leading-snug border-t border-slate-200 pt-2">
-            Blue bars show the active 5-day workweeks on the right. Click any row to jump to that week.
-          </p>
+            </div>
+
+          {/* Overdue Basket (expands to match right calendar height, scrollable on overflow) */}
+          <div className="mt-3 pt-2.5 border-t border-slate-200 flex flex-col lg:flex-1 lg:min-h-0">
+            <div className="flex items-center justify-between mb-1.5 shrink-0">
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-700">
+                <AlertCircle className="h-3.5 w-3.5" /> Overdue Basket ({overdueTasks.length})
+              </span>
+              <span className="text-[10px] text-slate-400">Drag to calendar</span>
+            </div>
+            {overdueTasks.length === 0 ? (
+              <p className="text-[11px] text-slate-400 italic py-2">No overdue tasks.</p>
+            ) : (
+              <div className="space-y-1.5 overflow-y-auto pr-0.5 max-h-[200px] lg:max-h-none lg:flex-1 lg:min-h-0">
+                {overdueTasks.map((t) => {
+                  const ref: CalendarItemRef = { kind: 'task', id: t.id, name: t.name }
+                  const isCut = clipboard?.mode === 'cut' && clipboard.items.some((i) => i.id === t.id)
+                  const isSelected = selectedIds.has(t.id)
+                  const isDimmed = !!priorityFilter && (priorityFilter === 'Completed' || t.priority !== priorityFilter)
+                  return (
+                    <div
+                      key={t.id}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, ref)}
+                      onDragEnd={onDragEnd}
+                      onClick={(e) => handleItemClick(e, ref, t.dueDate, () => onEditTask?.(t))}
+                      title={`Overdue Task: ${t.name}\nDue: ${t.dueDate}\nPriority: ${t.priority}\nDrag onto calendar to reschedule · Click to edit`}
+                      className={cn(
+                        'group relative cursor-grab active:cursor-grabbing rounded border px-2 py-1.5 text-[11px] shadow-sm transition-all select-none',
+                        taskCardStyle(t, today),
+                        isSelected && 'ring-2 ring-primary',
+                        isDimmed && !isSelected && 'opacity-25',
+                        (draggingId === t.id || isCut) && 'opacity-45 border-dashed',
+                      )}
+                    >
+                      <div className="flex items-start gap-1 min-w-0">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); toggleSelectItem(ref, t.dueDate) }}
+                          title="Select / deselect"
+                          className={cn(
+                            'mt-0.5 h-3.5 w-3.5 shrink-0 rounded border flex items-center justify-center transition-opacity',
+                            isSelected
+                              ? 'bg-primary border-primary text-white opacity-100'
+                              : 'border-slate-400/70 bg-white/80 opacity-0 group-hover:opacity-100',
+                          )}
+                        >
+                          {isSelected && <Check className="h-2.5 w-2.5" />}
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold truncate leading-tight">{t.name}</p>
+                          <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
+                            {t.priority} · Due {t.dueDate}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          </div>
         </aside>
 
         {/* RIGHT: 5-Day Workweek Schedule (Multi-Week Grid OR Outlook 1-Week Hourly View) */}
@@ -579,12 +757,14 @@ export function WorkWeekCalendar({
             itemsByDay={itemsByDay}
             today={today}
             projectCode={projectCode}
-            selectedItem={selectedItem}
+            selectedIds={selectedIds}
             selectedDay={selectedDay}
             draggingId={draggingId}
             clipboard={clipboard}
+            priorityFilter={priorityFilter}
             onSelectDay={setSelectedDay}
-            onSelectItem={setSelectedItem}
+            onItemClick={handleItemClick}
+            onToggleSelect={toggleSelectItem}
             onEditTask={onEditTask}
             onEditMilestone={onEditMilestone}
             onDragStart={onDragStart}
@@ -677,7 +857,7 @@ export function WorkWeekCalendar({
                             <button
                               onClick={(e) => { e.stopPropagation(); void handlePaste(day.ymd, week.ww) }}
                               className="inline-flex items-center gap-0.5 rounded bg-primary/10 hover:bg-primary text-primary hover:text-white px-1.5 py-0.5 text-[11px] font-medium transition-colors"
-                              title={`Paste "${clipboard.name}" onto ${day.dayLabel}`}
+                              title={`Paste ${clipboard.items.length} item(s) onto ${day.dayLabel}`}
                             >
                               <ClipboardPaste className="h-3 w-3" /> Paste
                             </button>
@@ -694,22 +874,24 @@ export function WorkWeekCalendar({
                       >
                         {/* Milestones on this day */}
                         {dayMilestones.map((m) => {
-                          const ref: ItemRef = { kind: 'milestone', id: m.id, name: m.name }
-                          const isCut = clipboard?.mode === 'cut' && clipboard.id === m.id
-                          const isSelected = selectedItem?.id === m.id
+                          const ref: CalendarItemRef = { kind: 'milestone', id: m.id, name: m.name }
+                          const isCut = clipboard?.mode === 'cut' && clipboard.items.some((i) => i.id === m.id)
+                          const isSelected = selectedIds.has(m.id)
+                          const isDimmed = !!priorityFilter
                           return (
                             <div
                               key={m.id}
                               draggable
                               onDragStart={(e) => onDragStart(e, ref)}
                               onDragEnd={onDragEnd}
-                              onClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd); onEditMilestone?.(m) }}
-                              title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to select & edit`}
+                              onClick={(e) => handleItemClick(e, ref, day.ymd, () => onEditMilestone?.(m))}
+                              title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to edit · Ctrl+Click to multi-select`}
                               className={cn(
                                 'group relative cursor-grab active:cursor-grabbing rounded border shadow-sm transition-all select-none min-w-0',
                                 isTwoColMatrix ? 'px-1.5 py-1 text-[11px]' : 'px-2 py-1.5 text-xs',
                                 milestoneCardStyle(m, today),
                                 isSelected && 'ring-2 ring-primary',
+                                isDimmed && !isSelected && 'opacity-25',
                                 (draggingId === m.id || isCut) && 'opacity-45 border-dashed',
                               )}
                             >
@@ -731,31 +913,46 @@ export function WorkWeekCalendar({
 
                         {/* Tasks on this day */}
                         {dayTasks.map((t) => {
-                          const ref: ItemRef = { kind: 'task', id: t.id, name: t.name }
-                          const isCut = clipboard?.mode === 'cut' && clipboard.id === t.id
-                          const isSelected = selectedItem?.id === t.id
+                          const ref: CalendarItemRef = { kind: 'task', id: t.id, name: t.name }
+                          const isCut = clipboard?.mode === 'cut' && clipboard.items.some((i) => i.id === t.id)
+                          const isSelected = selectedIds.has(t.id)
+                          const isDimmed = !!priorityFilter && (priorityFilter === 'Completed' ? t.status !== 'Completed' : t.status === 'Completed' || t.priority !== priorityFilter)
                           return (
                             <div
                               key={t.id}
                               draggable
                               onDragStart={(e) => onDragStart(e, ref)}
                               onDragEnd={onDragEnd}
-                              onClick={(e) => { e.stopPropagation(); setSelectedItem(ref); setSelectedDay(day.ymd); onEditTask?.(t) }}
-                              title={`Task: ${t.name}\nProject: ${projectCode(t.projectId)}\nStatus: ${t.status}\nDue: ${t.dueDate}\nClick to select & edit`}
+                              onClick={(e) => handleItemClick(e, ref, day.ymd, () => onEditTask?.(t))}
+                              title={`Task: ${t.name}\nProject: ${projectCode(t.projectId)}\nPriority: ${t.priority}\nStatus: ${t.status}\nDue: ${t.dueDate}\nClick to edit · Ctrl+Click or ☑ to multi-select`}
                               className={cn(
                                 'group relative cursor-grab active:cursor-grabbing rounded border shadow-sm transition-all select-none min-w-0',
                                 isTwoColMatrix ? 'px-1.5 py-1 text-[11px]' : 'px-2 py-1.5 text-xs',
                                 taskCardStyle(t, today),
                                 isSelected && 'ring-2 ring-primary',
+                                isDimmed && !isSelected && 'opacity-25',
                                 (draggingId === t.id || isCut) && 'opacity-45 border-dashed',
                               )}
                             >
                               <div className="flex items-start gap-1 min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); toggleSelectItem(ref, day.ymd) }}
+                                  title="Select / deselect for multi-action"
+                                  className={cn(
+                                    'mt-0.5 h-3.5 w-3.5 shrink-0 rounded border flex items-center justify-center transition-opacity',
+                                    isSelected
+                                      ? 'bg-primary border-primary text-white opacity-100'
+                                      : 'border-slate-400/70 bg-white/80 opacity-0 group-hover:opacity-100',
+                                  )}
+                                >
+                                  {isSelected && <Check className="h-2.5 w-2.5" />}
+                                </button>
                                 {!isTwoColMatrix && <GripVertical className="h-3.5 w-3.5 shrink-0 opacity-50 group-hover:opacity-90 mt-0.5" />}
                                 <CheckSquare className="h-3 w-3 shrink-0 mt-0.5" />
                                 <div className="min-w-0 flex-1">
                                   <p className="font-semibold truncate leading-tight">{t.name}</p>
-                                  <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">{projectCode(t.projectId)} · {t.status}</p>
+                                  <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">{projectCode(t.projectId)} · {t.priority}</p>
                                 </div>
                                 <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 bg-white/90 rounded px-1 py-0.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
                                   <button onClick={() => handleCopy(ref)} title="Copy task" className="p-0.5 hover:text-primary"><Copy className="h-3 w-3" /></button>
