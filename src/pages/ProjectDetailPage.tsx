@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Archive, ArrowDown, ArrowLeft, ArrowUp, Calendar, Cpu, FileSpreadsheet, GitBranch, Layers, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Archive, ArrowLeft, Calendar, Cpu, FileSpreadsheet, GitBranch, GripVertical, Layers, Pencil, Plus, Trash2 } from 'lucide-react'
 import { db } from '@/database/db'
 import {
   PRODUCT_STAGES,
@@ -25,7 +25,8 @@ import { exportSingleProjectReport } from '@/services/exportService'
 import { deleteTask } from '@/services/taskService'
 import { deleteMilestone } from '@/services/milestoneService'
 import { deleteProject } from '@/services/projectService'
-import { deleteWorkstream, moveWorkstreamOrder, sortWorkstreams, updateWorkstream } from '@/services/workstreamService'
+import { deleteWorkstream, reorderWorkstreams, sortWorkstreams, updateWorkstream } from '@/services/workstreamService'
+import { useSmoothRowDrag } from '@/hooks/useSmoothRowDrag'
 import { daysUntil, formatDate, formatDateTime, isPast } from '@/utils/helpers'
 import { errorMessage } from '@/utils/validation'
 
@@ -87,9 +88,16 @@ export function ProjectDetailPage() {
   const [msDeleting, setMsDeleting] = useState<Milestone | undefined>()
   const [error, setError] = useState('')
 
+  const orderedWorkstreams = data ? sortWorkstreams(data.workstreams) : []
+  const projectIdForDrag = data?.project?.id ?? ''
+  const { registerRow, startDrag, getRowStyle, draggingId } = useSmoothRowDrag(
+    orderedWorkstreams,
+    (orderedIds) => reorderWorkstreams(projectIdForDrag, orderedIds).catch((e) => setError(errorMessage(e))),
+  )
+
   if (!data) return <Loading />
-  const { project: p, workstreams: rawWorkstreams, tasks, milestones, logs } = data
-  const workstreams = sortWorkstreams(rawWorkstreams)
+  const { project: p, tasks, milestones, logs } = data
+  const workstreams = orderedWorkstreams
   if (!p) {
     return (
       <Card>
@@ -287,7 +295,12 @@ export function ProjectDetailPage() {
               {workstreams.map((w, idx) => {
                 const late = w.status !== 'Done' && !!w.targetDate && isPast(w.targetDate)
                 return (
-                  <tr key={w.id}>
+                  <tr
+                    key={w.id}
+                    ref={registerRow(w.id)}
+                    style={getRowStyle(w.id, idx)}
+                    className={draggingId === w.id ? 'bg-white dark:bg-slate-800' : undefined}
+                  >
                     <td className="font-medium text-slate-800">
                       <span className="inline-flex items-center gap-1.5">
                         <GitBranch className="h-3.5 w-3.5 text-primary/70 shrink-0" />
@@ -319,11 +332,16 @@ export function ProjectDetailPage() {
                     <td className="whitespace-nowrap">
                       {!archived && (
                         <>
-                          <Button variant="ghost" size="sm" title="Move stage up" disabled={idx === 0} onClick={() => void moveWorkstreamOrder(p.id, w.id, 'up')}>
-                            <ArrowUp className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="sm" title="Move stage down" disabled={idx === workstreams.length - 1} onClick={() => void moveWorkstreamOrder(p.id, w.id, 'down')}>
-                            <ArrowDown className="h-3.5 w-3.5" />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Drag up or down to reorder stage"
+                            aria-label="Drag to reorder stage"
+                            disabled={workstreams.length < 2}
+                            onPointerDown={(e) => startDrag(e, w.id, idx)}
+                            className="cursor-grab active:cursor-grabbing touch-none"
+                          >
+                            <GripVertical className="h-4 w-4 text-slate-400" />
                           </Button>
                           <Button variant="ghost" size="sm" onClick={() => { setWsEditing(w); setWsDefaultCategory(undefined); setWsOpen(true) }}>
                             <Pencil className="h-3.5 w-3.5" />

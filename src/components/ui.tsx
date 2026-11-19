@@ -1,14 +1,14 @@
-import { useEffect, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { GripHorizontal, Inbox, Loader2, X } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '@/utils/helpers'
 
-// ---------- Button ----------
+// ---------- Button (Apple-standardized 32px height across the app) ----------
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
 const variants: Record<Variant, string> = {
-  primary: 'bg-primary text-white hover:bg-primary-hover shadow-sm hover:shadow',
-  secondary: 'bg-white text-emerald-900 border border-emerald-200 hover:bg-emerald-50/80 hover:border-emerald-300 shadow-sm',
-  ghost: 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-800',
+  primary: 'bg-primary text-white hover:bg-primary-hover shadow-sm',
+  secondary: 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 shadow-sm',
+  ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
   danger: 'bg-rose-600 text-white hover:bg-rose-700 shadow-sm',
 }
 export function Button({ variant = 'secondary', size = 'md', className, ...props }:
@@ -17,8 +17,8 @@ export function Button({ variant = 'secondary', size = 'md', className, ...props
     <button
       {...props}
       className={cn(
-        'inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none',
-        size === 'sm' ? 'h-8 px-3 text-xs' : 'h-9 px-4 text-sm',
+        'inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap',
+        size === 'sm' ? 'h-8 px-3 text-xs' : 'h-8 px-3.5 text-[13px]',
         variants[variant], className,
       )}
     />
@@ -50,7 +50,7 @@ export function Badge({ children, color }: { children: ReactNode; color?: string
 export function ProgressBar({ value }: { value: number }) {
   return (
     <div className="flex items-center gap-2 min-w-[90px]">
-      <div className="h-1.5 flex-1 rounded-full bg-emerald-100 overflow-hidden">
+      <div className="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden">
         <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${value}%` }} />
       </div>
       <span className="text-xs text-slate-500 w-8 text-right">{value}%</span>
@@ -61,9 +61,9 @@ export function ProgressBar({ value }: { value: number }) {
 // ---------- Card ----------
 export function Card({ title, action, children, className }: { title?: string; action?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={cn('rounded-xl border border-emerald-200/80 bg-white shadow-sm', className)}>
+    <section className={cn('rounded-2xl border border-slate-200 bg-white shadow-sm', className)}>
       {title && (
-        <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-emerald-100 bg-emerald-50/40 rounded-t-xl">
+        <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50/50 rounded-t-2xl">
           <h2 className="text-sm font-bold text-slate-800 tracking-tight">{title}</h2>
           {action}
         </header>
@@ -77,7 +77,7 @@ export function Card({ title, action, children, className }: { title?: string; a
 export function EmptyState({ title, hint, action }: { title: string; hint?: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center py-10 text-center">
-      <Inbox className="h-8 w-8 text-emerald-300 mb-2" />
+      <Inbox className="h-8 w-8 text-slate-300 mb-2" />
       <p className="text-sm font-medium text-slate-600">{title}</p>
       {hint && <p className="text-xs text-slate-400 mt-1 max-w-sm">{hint}</p>}
       {action && <div className="mt-3">{action}</div>}
@@ -86,14 +86,14 @@ export function EmptyState({ title, hint, action }: { title: string; hint?: stri
 }
 export function Loading() {
   return (
-    <div className="flex items-center justify-center py-16 text-emerald-600">
+    <div className="flex items-center justify-center py-16 text-primary">
       <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…
     </div>
   )
 }
 
 // ---------- Form fields ----------
-const inputCls = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-colors'
+const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-colors'
 export function Field({ label, children, required }: { label: string; children: ReactNode; required?: boolean }) {
   return (
     <label className="block">
@@ -163,7 +163,7 @@ export function Modal({
           aria-describedby={undefined}
           style={{ transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))` }}
           className={cn(
-            'fixed z-50 left-1/2 top-1/2 w-[94vw] max-h-[88vh] overflow-y-auto rounded-xl border border-emerald-200 bg-white shadow-2xl',
+            'fixed z-50 left-1/2 top-1/2 w-[94vw] max-h-[88vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl',
             compact ? 'max-w-lg' : wide ? 'max-w-2xl' : 'max-w-md',
           )}
         >
@@ -171,17 +171,17 @@ export function Modal({
             onMouseDown={startDrag}
             title="Drag to move window"
             className={cn(
-              'flex items-center justify-between border-b border-emerald-100 sticky top-0 bg-emerald-50/70 backdrop-blur-sm cursor-move select-none z-10',
+              'flex items-center justify-between border-b border-slate-100 sticky top-0 bg-slate-50/80 backdrop-blur-sm cursor-move select-none z-10',
               compact ? 'px-4 py-2.5' : 'px-5 py-3',
             )}
           >
             <div className="flex items-center gap-2 min-w-0">
-              <GripHorizontal className="h-4 w-4 text-emerald-500 shrink-0" />
+              <GripHorizontal className="h-4 w-4 text-primary shrink-0" />
               <Dialog.Title className={cn('font-bold text-slate-800 truncate', compact ? 'text-sm' : 'text-base')}>
                 {title}
               </Dialog.Title>
             </div>
-            <Dialog.Close className="p-1 rounded-lg hover:bg-emerald-100 text-slate-500 hover:text-slate-800 transition-colors" aria-label="Close">
+            <Dialog.Close className="p-1 rounded-full hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors" aria-label="Close">
               <X className="h-4 w-4" />
             </Dialog.Close>
           </div>
@@ -209,7 +209,7 @@ export function FormError({ message }: { message: string }) {
   return message ? <p className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">{message}</p> : null
 }
 
-// ---------- Left Slide-Over Drawer (slides over left sidebar without blurring the view) ----------
+// ---------- Left Slide-Over Drawer (island shape, slides over left sidebar without blurring the view) ----------
 export function LeftSlideDrawer({
   open,
   onClose,
@@ -221,29 +221,44 @@ export function LeftSlideDrawer({
   title: string
   children: ReactNode
 }) {
+  const drawerRef = useRef<HTMLElement>(null)
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      if (drawerRef.current?.contains(target)) return
+      // Don't close if clicking another calendar item (which switches the item inside the drawer)
+      if (target.closest('[data-calendar-item]')) return
+      onClose()
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onMouseDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onMouseDown)
+    }
   }, [open, onClose])
 
   return (
     <aside
+      ref={drawerRef}
       aria-hidden={!open}
       className={cn(
-        'fixed inset-y-0 top-0 left-0 !mt-0 z-50 w-[330px] max-w-[92vw] bg-white border-r border-emerald-200 shadow-2xl flex flex-col transition-transform duration-200 ease-out',
-        open ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none',
+        'fixed inset-y-3 left-3 !mt-0 z-50 w-[330px] max-w-[92vw] bg-white border border-slate-200 shadow-2xl flex flex-col transition-transform duration-200 ease-out rounded-2xl overflow-hidden',
+        open ? 'translate-x-0 pointer-events-auto' : '-translate-x-[110%] pointer-events-none',
       )}
     >
-      <div className="flex h-14 items-center justify-between px-4 border-b border-emerald-100 bg-emerald-50/60 shrink-0">
+      <div className="flex h-14 items-center justify-between px-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
         <h2 className="text-sm font-bold text-slate-800 truncate">{title}</h2>
         <button
           type="button"
           onClick={onClose}
-          className="p-1.5 rounded-lg hover:bg-emerald-100 text-slate-600 hover:text-slate-900 transition-colors"
+          className="p-1.5 rounded-full hover:bg-slate-200/70 text-slate-600 hover:text-slate-900 transition-colors"
           aria-label="Close"
           title="Close panel"
         >

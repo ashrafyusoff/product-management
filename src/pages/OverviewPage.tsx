@@ -62,6 +62,7 @@ export function OverviewPage() {
 
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | undefined>()
+  const [taskDefaultDueDate, setTaskDefaultDueDate] = useState<string | undefined>()
   const [milestoneModalOpen, setMilestoneModalOpen] = useState(false)
   const [editingMilestone, setEditingMilestone] = useState<Milestone | undefined>()
 
@@ -165,7 +166,8 @@ export function OverviewPage() {
           tasks={tasks}
           milestones={milestones}
           projects={projects}
-          onEditTask={(t) => { setMilestoneModalOpen(false); setEditingTask(t); setTaskModalOpen(true) }}
+          onAddTask={(dueDate) => { setMilestoneModalOpen(false); setEditingTask(undefined); setTaskDefaultDueDate(dueDate); setTaskModalOpen(true) }}
+          onEditTask={(t) => { setMilestoneModalOpen(false); setTaskDefaultDueDate(undefined); setEditingTask(t); setTaskModalOpen(true) }}
           onEditMilestone={(m) => { setTaskModalOpen(false); setEditingMilestone(m); setMilestoneModalOpen(true) }}
         />
       </div>
@@ -422,7 +424,7 @@ export function OverviewPage() {
         </Card>
       </div>
 
-      <TaskForm open={taskModalOpen} task={editingTask} variant="drawer" onClose={() => { setTaskModalOpen(false); setEditingTask(undefined) }} />
+      <TaskForm open={taskModalOpen} task={editingTask} defaultDueDate={taskDefaultDueDate} variant="drawer" onClose={() => { setTaskModalOpen(false); setEditingTask(undefined); setTaskDefaultDueDate(undefined) }} />
       <MilestoneForm open={milestoneModalOpen} milestone={editingMilestone} variant="drawer" onClose={() => { setMilestoneModalOpen(false); setEditingMilestone(undefined) }} />
       <WorkstreamForm
         open={stageModalOpen}

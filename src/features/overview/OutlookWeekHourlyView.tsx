@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Check, CheckSquare, ClipboardPaste, Copy, Flag, Scissors } from 'lucide-react'
+import { CheckSquare, ClipboardPaste, Copy, Flag, Scissors } from 'lucide-react'
 import type { Milestone, Task } from '@/types'
 import { Badge } from '@/components/ui'
 import { cn } from '@/utils/helpers'
@@ -138,9 +138,11 @@ function layoutDayTasks(dayTasks: Task[]): PositionedTask[] {
 
 export function OutlookWeekHourlyView({
   week,
+  singleDay,
   itemsByDay,
   today,
   projectCode,
+  projectName,
   selectedIds,
   selectedDay,
   draggingId,
@@ -148,7 +150,7 @@ export function OutlookWeekHourlyView({
   priorityFilter,
   onSelectDay,
   onItemClick,
-  onToggleSelect,
+  onItemDoubleClick,
   onEditTask,
   onEditMilestone,
   onDragStart,
@@ -157,14 +159,17 @@ export function OutlookWeekHourlyView({
   onCut,
   onPaste,
   onDropTaskAtTime,
+  onResizeTaskTime,
   onDropMilestone,
   taskCardStyle,
   milestoneCardStyle,
 }: {
   week: WorkweekData
+  singleDay?: WorkweekDay
   itemsByDay: Map<string, { tasks: Task[]; milestones: Milestone[] }>
   today: string
   projectCode: (pid: string) => string
+  projectName: (pid: string) => string
   selectedIds: Set<string>
   selectedDay: string
   draggingId: string
@@ -172,7 +177,7 @@ export function OutlookWeekHourlyView({
   priorityFilter: string | null
   onSelectDay: (ymd: string) => void
   onItemClick: (e: React.MouseEvent, ref: CalendarItemRef, dayYmd: string, openEdit: () => void) => void
-  onToggleSelect: (ref: CalendarItemRef, dayYmd: string) => void
+  onItemDoubleClick: (e: React.MouseEvent, ref: CalendarItemRef, dayYmd: string, openEdit: () => void) => void
   onEditTask?: (t: Task) => void
   onEditMilestone?: (m: Milestone) => void
   onDragStart: (e: React.DragEvent, ref: CalendarItemRef) => void
@@ -181,11 +186,14 @@ export function OutlookWeekHourlyView({
   onCut: (ref: CalendarItemRef) => void
   onPaste: (ymd: string, ww: number) => void
   onDropTaskAtTime: (taskId: string, ymd: string, startTime: string, endTime: string, ww: number) => void
+  onResizeTaskTime?: (taskId: string, ymd: string, startTime: string, endTime: string) => void
   onDropMilestone: (milestoneId: string, ymd: string, ww: number) => void
   taskCardStyle: (t: Task, today: string) => string
   milestoneCardStyle: (m: Milestone, today: string) => string
 }) {
   const [hoverSlot, setHoverSlot] = useState<{ ymd: string; topPx: number } | null>(null)
+  const [resizing, setResizing] = useState<{ taskId: string; startMin: number; endMin: number } | null>(null)
+  const visibleDays = useMemo(() => (singleDay ? [singleDay] : week.days), [singleDay, week.days])
 
   const { startHour, endHour, hours, dayLayouts, hasAnyMilestones } = useMemo(() => {
     let minH = DEFAULT_START_HOUR
@@ -193,7 +201,7 @@ export function OutlookWeekHourlyView({
     let anyMs = false
     const layouts = new Map<string, PositionedTask[]>()
 
-    for (const day of week.days) {
+    for (const day of visibleDays) {
       const bucket = itemsByDay.get(day.ymd)
       const dayTasks = bucket?.tasks ?? []
       const dayMilestones = bucket?.milestones ?? []
@@ -210,7 +218,7 @@ export function OutlookWeekHourlyView({
     maxH = Math.min(24, Math.max(minH + 1, maxH))
     const hrs = Array.from({ length: maxH - minH }, (_, i) => minH + i)
     return { startHour: minH, endHour: maxH, hours: hrs, dayLayouts: layouts, hasAnyMilestones: anyMs }
-  }, [week.days, itemsByDay])
+  }, [visibleDays, itemsByDay])
 
   const gridStartMin = startHour * 60
   const totalGridHeight = hours.length * HOUR_HEIGHT
@@ -267,21 +275,62 @@ export function OutlookWeekHourlyView({
     }
   }
 
+  function startResize(
+    e: React.MouseEvent,
+    taskId: string,
+    ymd: string,
+    edge: 'top' | 'bottom',
+    origStart: number,
+    origEnd: number,
+  ) {
+    e.stopPropagation()
+    e.preventDefault()
+    const startY = e.clientY
+    let curStart = origStart
+    let curEnd = origEnd
+    setResizing({ taskId, startMin: origStart, endMin: origEnd })
+
+    const onMove = (ev: MouseEvent) => {
+      const deltaMin = Math.round((ev.clientY - startY) / (HOUR_HEIGHT / 4)) * 15
+      if (edge === 'top') {
+        curStart = Math.max(gridStartMin, Math.min(origEnd - 15, origStart + deltaMin))
+      } else {
+        curEnd = Math.min(endHour * 60, Math.max(origStart + 15, origEnd + deltaMin))
+      }
+      setResizing({ taskId, startMin: curStart, endMin: curEnd })
+    }
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      setResizing(null)
+      if (curStart !== origStart || curEnd !== origEnd) {
+        onResizeTaskTime?.(taskId, ymd, minutesToHhmm(curStart), minutesToHhmm(curEnd))
+      }
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  const gridColsCls = visibleDays.length === 1 ? 'grid-cols-[64px_minmax(0,1fr)]' : 'grid-cols-[64px_repeat(5,minmax(0,1fr))]'
+
   return (
     <div className="flex-1 overflow-x-auto">
-      <div className="min-w-[820px]">
-        {/* Day Headers (5 full columns Mon - Fri) */}
-        <div className="grid grid-cols-[64px_repeat(5,minmax(0,1fr))] bg-slate-100 border-b border-slate-200 text-xs font-semibold text-slate-700 sticky top-0 z-10">
+      <div className={visibleDays.length === 1 ? 'min-w-[360px]' : 'min-w-[820px]'}>
+        {/* Day Headers */}
+        <div className={cn('grid bg-slate-100 border-b border-slate-200 text-xs font-semibold text-slate-700 sticky top-0 z-10', gridColsCls)}>
           <div className="px-2 py-2.5 border-r border-slate-200 flex items-center justify-center">
             <span className="inline-flex items-center rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-bold text-white">
               WW{String(week.ww).padStart(2, '0')}
             </span>
           </div>
-          {week.days.map((day) => {
+          {visibleDays.map((day) => {
             const count = (itemsByDay.get(day.ymd)?.tasks.length ?? 0) + (itemsByDay.get(day.ymd)?.milestones.length ?? 0)
             return (
               <div
                 key={day.ymd}
+                data-calendar-day="1"
                 onClick={() => onSelectDay(day.ymd)}
                 className={cn(
                   'px-3 py-2 border-r last:border-r-0 border-slate-200 flex items-center justify-between cursor-pointer',
@@ -313,11 +362,11 @@ export function OutlookWeekHourlyView({
 
         {/* All-Day / Milestones Strip (just like Outlook's All-Day header) */}
         {hasAnyMilestones && (
-          <div className="grid grid-cols-[64px_repeat(5,minmax(0,1fr))] border-b border-slate-200 bg-slate-50/70">
+          <div className={cn('grid border-b border-slate-200 bg-slate-50/70', gridColsCls)}>
             <div className="px-2 py-2 border-r border-slate-200 text-[10px] font-semibold text-slate-500 flex items-center justify-center text-center">
               Milestones
             </div>
-            {week.days.map((day) => {
+            {visibleDays.map((day) => {
               const dayMilestones = itemsByDay.get(day.ymd)?.milestones ?? []
               return (
                 <div key={day.ymd} className="p-1.5 border-r last:border-r-0 border-slate-200 flex flex-col gap-1 min-w-0">
@@ -329,11 +378,13 @@ export function OutlookWeekHourlyView({
                     return (
                       <div
                         key={m.id}
+                        data-calendar-item="1"
                         draggable
                         onDragStart={(e) => onDragStart(e, ref)}
                         onDragEnd={onDragEnd}
                         onClick={(e) => onItemClick(e, ref, day.ymd, () => onEditMilestone?.(m))}
-                        title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to edit · Ctrl+Click to multi-select`}
+                        onDoubleClick={(e) => onItemDoubleClick(e, ref, day.ymd, () => onEditMilestone?.(m))}
+                        title={`Milestone: ${m.name}\nProject: ${projectCode(m.projectId)}\nTarget: ${m.targetDate} (${m.status})\nClick to select · Double-click to edit · Ctrl+Click to multi-select`}
                         className={cn(
                           'group relative cursor-grab active:cursor-grabbing rounded border px-1.5 py-1 text-[11px] shadow-sm select-none min-w-0 transition-opacity',
                           milestoneCardStyle(m, today),
@@ -361,7 +412,7 @@ export function OutlookWeekHourlyView({
         )}
 
         {/* Hourly Time Grid */}
-        <div className="grid grid-cols-[64px_repeat(5,minmax(0,1fr))] relative">
+        <div className={cn('grid relative', gridColsCls)}>
           {/* Left Time Axis */}
           <div className="border-r border-slate-200 bg-slate-50/60 select-none">
             {hours.map((h) => (
@@ -375,12 +426,13 @@ export function OutlookWeekHourlyView({
             ))}
           </div>
 
-          {/* 5 Day Columns (Mon - Fri) */}
-          {week.days.map((day) => {
+          {/* Day Columns */}
+          {visibleDays.map((day) => {
             const laidOut = dayLayouts.get(day.ymd) ?? []
             return (
               <div
                 key={day.ymd}
+                data-calendar-day="1"
                 style={{ height: totalGridHeight }}
                 onClick={() => onSelectDay(day.ymd)}
                 onDragOver={(e) => handleColumnDragOver(e, day.ymd)}
@@ -416,7 +468,12 @@ export function OutlookWeekHourlyView({
 
                 {/* Positioned Task Blocks */}
                 {laidOut.map((item) => {
-                  const { task: t, startMin, endMin, startLabel, endLabel, col, totalCols } = item
+                  const { task: t, col, totalCols } = item
+                  const isResizingThis = resizing?.taskId === t.id
+                  const startMin = isResizingThis ? resizing.startMin : item.startMin
+                  const endMin = isResizingThis ? resizing.endMin : item.endMin
+                  const startLabel = minutesToHhmm(startMin)
+                  const endLabel = minutesToHhmm(endMin)
                   const topPx = ((startMin - gridStartMin) / 60) * HOUR_HEIGHT + 1
                   const heightPx = Math.max(24, ((endMin - startMin) / 60) * HOUR_HEIGHT - 2)
                   const widthPct = 100 / totalCols
@@ -430,47 +487,45 @@ export function OutlookWeekHourlyView({
                   return (
                     <div
                       key={t.id}
-                      draggable
+                      data-calendar-item="1"
+                      draggable={!isResizingThis}
                       onDragStart={(e) => onDragStart(e, ref)}
                       onDragEnd={onDragEnd}
                       onClick={(e) => onItemClick(e, ref, day.ymd, () => onEditTask?.(t))}
+                      onDoubleClick={(e) => onItemDoubleClick(e, ref, day.ymd, () => onEditTask?.(t))}
                       style={{
                         top: topPx,
                         height: heightPx,
                         left: `calc(${leftPct}% + 2px)`,
                         width: `calc(${widthPct}% - 4px)`,
                       }}
-                      title={`Task: ${t.name}\nTime: ${startLabel} – ${endLabel}\nPriority: ${t.priority}\nStatus: ${t.status}\nClick to edit · Ctrl+Click or checkbox to multi-select`}
+                      title={`Task: ${t.name}\nTime: ${startLabel} – ${endLabel}\nPriority: ${t.priority}\nStatus: ${t.status}\nClick to select · Double-click to edit · Drag top/bottom edge to resize`}
                       className={cn(
-                        'group absolute z-10 cursor-grab active:cursor-grabbing rounded border px-1.5 py-1 shadow-sm overflow-hidden select-none transition-all hover:z-20 hover:shadow-md',
+                        'group absolute z-10 cursor-grab active:cursor-grabbing rounded-xl border px-1.5 py-1 shadow-sm overflow-hidden select-none transition-shadow hover:z-20 hover:shadow-md',
                         taskCardStyle(t, today),
                         isSelected && 'ring-2 ring-primary z-20',
+                        isResizingThis && 'ring-2 ring-primary z-30 shadow-lg',
                         isDimmed && !isSelected && 'opacity-25',
                         (draggingId === t.id || isCut) && 'opacity-45 border-dashed',
                       )}
                     >
+                      {/* Top Resize Handle (expand/contract start time) */}
+                      <div
+                        onMouseDown={(e) => startResize(e, t.id, day.ymd, 'top', item.startMin, item.endMin)}
+                        onClick={(e) => e.stopPropagation()}
+                        title="Drag up/down to adjust start time"
+                        className="absolute inset-x-0 top-0 h-1.5 cursor-ns-resize opacity-0 group-hover:opacity-100 hover:bg-primary/40 rounded-t-xl z-20"
+                      />
+
                       <div className="flex items-start gap-1 min-w-0 h-full">
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); onToggleSelect(ref, day.ymd) }}
-                          title="Select / deselect for multi-action"
-                          className={cn(
-                            'mt-0.5 h-3.5 w-3.5 shrink-0 rounded border flex items-center justify-center transition-opacity',
-                            isSelected
-                              ? 'bg-primary border-primary text-white opacity-100'
-                              : 'border-slate-400/70 bg-white/80 opacity-0 group-hover:opacity-100',
-                          )}
-                        >
-                          {isSelected && <Check className="h-2.5 w-2.5" />}
-                        </button>
                         <CheckSquare className="h-3 w-3 shrink-0 mt-0.5" />
                         <div className="min-w-0 flex-1">
                           <p className="text-[11px] font-semibold truncate leading-tight">
-                            {isCompact ? `${startLabel} ${t.name}` : t.name}
+                            {isCompact ? `${t.name} · ${projectName(t.projectId)}` : t.name}
                           </p>
                           {!isCompact && (
                             <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
-                              {startLabel}–{endLabel} · {projectCode(t.projectId)} · {t.priority}
+                              {isResizingThis ? `${startLabel}–${endLabel}` : projectName(t.projectId)}
                             </p>
                           )}
                         </div>
@@ -479,6 +534,14 @@ export function OutlookWeekHourlyView({
                           <button onClick={() => onCut(ref)} title="Cut task to move" className="p-0.5 hover:text-primary"><Scissors className="h-3 w-3" /></button>
                         </div>
                       </div>
+
+                      {/* Bottom Resize Handle (expand/contract end time) */}
+                      <div
+                        onMouseDown={(e) => startResize(e, t.id, day.ymd, 'bottom', item.startMin, item.endMin)}
+                        onClick={(e) => e.stopPropagation()}
+                        title="Drag up/down to adjust end time"
+                        className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize opacity-0 group-hover:opacity-100 hover:bg-primary/40 rounded-b-xl z-20"
+                      />
                     </div>
                   )
                 })}

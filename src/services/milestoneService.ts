@@ -3,6 +3,7 @@ import type { Milestone } from '@/types'
 import { newId, nowIso, todayStr } from '@/utils/helpers'
 import { ValidationError, requireText } from '@/utils/validation'
 import { logActivity } from './activityService'
+import { pushUndoSnapshot } from './undoService'
 
 export type MilestoneInput = Omit<Milestone, 'id' | 'createdAt' | 'updatedAt' | 'isSample'>
 
@@ -21,6 +22,7 @@ function normalise(i: MilestoneInput): MilestoneInput {
 export async function createMilestone(input: MilestoneInput) {
   validate(input)
   const data = normalise(input)
+  await pushUndoSnapshot(`Create milestone "${data.name}"`)
   const now = nowIso()
   const id = newId()
   await db.transaction('rw', [db.milestones, db.activityLogs], async () => {
@@ -34,6 +36,7 @@ export async function updateMilestone(id: string, input: MilestoneInput) {
   const data = normalise(input)
   const old = await db.milestones.get(id)
   if (!old) throw new ValidationError('Milestone no longer exists.')
+  await pushUndoSnapshot(`Update milestone "${data.name}"`)
   await db.transaction('rw', [db.milestones, db.activityLogs], async () => {
     await db.milestones.update(id, { ...data, updatedAt: nowIso() })
     const changed = old.status !== data.status
@@ -45,6 +48,7 @@ export async function updateMilestone(id: string, input: MilestoneInput) {
 export async function deleteMilestone(id: string) {
   const m = await db.milestones.get(id)
   if (!m) return
+  await pushUndoSnapshot(`Delete milestone "${m.name}"`)
   await db.transaction('rw', [db.milestones, db.activityLogs], async () => {
     await db.milestones.delete(id)
     await logActivity('Milestone', id, m.projectId, 'Deleted', `Milestone "${m.name}" deleted`)
@@ -55,6 +59,7 @@ export async function rescheduleMilestone(id: string, newTargetDate: string) {
   const old = await db.milestones.get(id)
   if (!old) throw new ValidationError('Milestone no longer exists.')
   if (old.targetDate === newTargetDate) return
+  await pushUndoSnapshot(`Move milestone "${old.name}"`)
   await db.transaction('rw', [db.milestones, db.activityLogs], async () => {
     await db.milestones.update(id, { targetDate: newTargetDate, updatedAt: nowIso() })
     await logActivity('Milestone', id, old.projectId, 'Updated', `Milestone "${old.name}" moved to ${newTargetDate}`)

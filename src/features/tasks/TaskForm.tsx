@@ -8,10 +8,34 @@ import { Button, Field, FormError, Input, LeftSlideDrawer, Modal, Select, Textar
 
 // `defaultProjectId` pre-selects the project when adding from inside a project.
 // `nonNpiOnly` restricts the project dropdown strictly to Side-Quest items.
+const DURATION_PRESETS = [
+  { value: '15', label: '15 min' },
+  { value: '30', label: '30 min' },
+  { value: '45', label: '45 min' },
+  { value: '60', label: '1 hour' },
+  { value: '90', label: '1.5 hours' },
+  { value: '120', label: '2 hours' },
+  { value: '180', label: '3 hours' },
+  { value: '240', label: '4 hours' },
+  { value: 'custom', label: 'Custom' },
+]
+
+function toMins(hhmm?: string): number {
+  if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return 9 * 60
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + m
+}
+
+function fromMins(mins: number): string {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, mins))
+  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`
+}
+
 export function TaskForm({
   open,
   task,
   defaultProjectId,
+  defaultDueDate,
   nonNpiOnly = false,
   variant = 'modal',
   onClose,
@@ -19,6 +43,7 @@ export function TaskForm({
   open: boolean
   task?: Task
   defaultProjectId?: string
+  defaultDueDate?: string
   nonNpiOnly?: boolean
   variant?: 'modal' | 'drawer'
   onClose: () => void
@@ -26,9 +51,10 @@ export function TaskForm({
   const title = task ? 'Edit Task' : 'Add Task'
   const content = (
     <Body
-      key={`${open ? 'open' : 'closed'}-${task?.id ?? 'new'}-${task?.updatedAt ?? ''}-${defaultProjectId ?? ''}-${nonNpiOnly ? 'nonnpi' : 'all'}`}
+      key={`${open ? 'open' : 'closed'}-${task?.id ?? 'new'}-${task?.updatedAt ?? ''}-${defaultProjectId ?? ''}-${defaultDueDate ?? ''}-${nonNpiOnly ? 'nonnpi' : 'all'}`}
       task={task}
       defaultProjectId={defaultProjectId}
+      defaultDueDate={defaultDueDate}
       nonNpiOnly={nonNpiOnly}
       onClose={onClose}
     />
@@ -50,21 +76,29 @@ export function TaskForm({
 function Body({
   task,
   defaultProjectId,
+  defaultDueDate,
   nonNpiOnly,
   onClose,
 }: {
   task?: Task
   defaultProjectId?: string
+  defaultDueDate?: string
   nonNpiOnly?: boolean
   onClose: () => void
 }) {
   const projects = useTable<Project>('projects') ?? []
   const workstreams = useTable<Workstream>('workstreams') ?? []
-  const [form, setForm] = useState<TaskInput>(() =>
-    task
-      ? { ...task, startDate: task.startDate || task.createdAt?.slice(0, 10) || todayStr() }
-      : emptyTask(defaultProjectId),
-  )
+  const [form, setForm] = useState<TaskInput>(() => {
+    if (task) {
+      return { ...task, startDate: task.startDate || task.createdAt?.slice(0, 10) || todayStr() }
+    }
+    const base = emptyTask(defaultProjectId)
+    if (defaultDueDate) base.dueDate = defaultDueDate
+    return base
+  })
+
+  const diffMins = toMins(form.endTime) - toMins(form.startTime)
+  const matchedPreset = DURATION_PRESETS.find((p) => p.value !== 'custom' && Number(p.value) === diffMins)?.value ?? 'custom'
   const [error, setError] = useState('')
   const set = <K extends keyof TaskInput>(k: K, v: TaskInput[K]) => setForm((f) => ({ ...f, [k]: v }))
 
@@ -156,7 +190,31 @@ function Body({
           <Input type="date" value={form.dueDate} onChange={(e) => set('dueDate', e.target.value)} />
         </Field>
         <Field label="Start Time">
-          <Input type="time" value={form.startTime ?? '09:00'} onChange={(e) => set('startTime', e.target.value)} />
+          <Input
+            type="time"
+            value={form.startTime ?? '09:00'}
+            onChange={(e) => {
+              const nextStart = e.target.value
+              const curDuration = Math.max(15, toMins(form.endTime) - toMins(form.startTime))
+              setForm((f) => ({
+                ...f,
+                startTime: nextStart,
+                endTime: matchedPreset !== 'custom' ? fromMins(toMins(nextStart) + curDuration) : f.endTime,
+              }))
+            }}
+          />
+        </Field>
+        <Field label="Duration">
+          <Select
+            value={matchedPreset}
+            onChange={(e) => {
+              const val = e.target.value
+              if (val === 'custom') return
+              const nextEnd = fromMins(toMins(form.startTime ?? '09:00') + Number(val))
+              set('endTime', nextEnd)
+            }}
+            options={DURATION_PRESETS}
+          />
         </Field>
         <Field label="End Time">
           <Input type="time" value={form.endTime ?? '10:00'} onChange={(e) => set('endTime', e.target.value)} />

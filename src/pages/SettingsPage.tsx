@@ -446,7 +446,7 @@ export function SettingsPage() {
 
       <Card title="About">
         <p className="text-sm text-slate-600">
-          <b>Product Management</b> — Personal Product Management Application · Website by <b className="text-primary">Pacca1214</b>
+          <b>Product Management</b> — Personal Product Management Application · Website by <b className="text-primary">AY &amp; ZH</b>
         </p>
       </Card>
 

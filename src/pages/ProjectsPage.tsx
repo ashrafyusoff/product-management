@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GitBranch, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GitBranch, GripVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTable } from '@/hooks/useTable'
 import { usePersistedState } from '@/hooks/usePersistedState'
 import {
@@ -18,7 +18,8 @@ import { Badge, Button, Card, ConfirmDialog, EmptyState, Input, Loading, Progres
 import { ProjectForm } from '@/features/projects/ProjectForm'
 import { WorkstreamForm } from '@/features/projects/WorkstreamForm'
 import { deleteProject, updateProject } from '@/services/projectService'
-import { deleteWorkstream, moveWorkstreamOrder, sortWorkstreams, updateWorkstream } from '@/services/workstreamService'
+import { deleteWorkstream, reorderWorkstreams, sortWorkstreams, updateWorkstream } from '@/services/workstreamService'
+import { useSmoothRowDrag } from '@/hooks/useSmoothRowDrag'
 import { formatDate, isPast } from '@/utils/helpers'
 import { errorMessage } from '@/utils/validation'
 
@@ -166,7 +167,7 @@ export function ProjectsPage() {
                       onAddStage={() => { setWsProjectId(p.id); setWsEditing(undefined); setWsOpen(true) }}
                       onEditStage={(w) => { setWsProjectId(p.id); setWsEditing(w); setWsOpen(true) }}
                       onDeleteStage={(w) => setWsDeleting(w)}
-                      onMoveStage={(w, dir) => void moveWorkstreamOrder(p.id, w.id, dir).catch((e) => setError(errorMessage(e)))}
+                      onReorderStages={(orderedIds) => void reorderWorkstreams(p.id, orderedIds).catch((e) => setError(errorMessage(e)))}
                       onError={(msg) => setError(msg)}
                     />
                   )
@@ -256,7 +257,7 @@ function ProductWithStagesGroup({
   onAddStage,
   onEditStage,
   onDeleteStage,
-  onMoveStage,
+  onReorderStages,
   onError,
 }: {
   project: Project
@@ -270,9 +271,10 @@ function ProductWithStagesGroup({
   onAddStage: () => void
   onEditStage: (w: Workstream) => void
   onDeleteStage: (w: Workstream) => void
-  onMoveStage: (w: Workstream, dir: 'up' | 'down') => void
+  onReorderStages: (orderedIds: string[]) => void
   onError: (msg: string) => void
 }) {
+  const { registerRow, startDrag, getRowStyle, draggingId } = useSmoothRowDrag(stages, onReorderStages)
   return (
     <>
       <tr onClick={onNavigate} className="border-t-2 border-slate-200 hover:bg-blue-50/40 cursor-pointer bg-white font-medium">
@@ -326,7 +328,12 @@ function ProductWithStagesGroup({
         const isLast = idx === stages.length - 1
         const late = w.status !== 'Done' && !!w.targetDate && isPast(w.targetDate)
         return (
-          <tr key={w.id} className="border-t border-slate-100 bg-slate-50/75 hover:bg-blue-50/40 text-xs">
+          <tr
+            key={w.id}
+            ref={registerRow(w.id)}
+            style={getRowStyle(w.id, idx)}
+            className={`border-t border-slate-100 bg-slate-50/75 hover:bg-blue-50/40 text-xs ${draggingId === w.id ? 'bg-white dark:bg-slate-800' : ''}`}
+          >
             <td className="pl-7 pr-2 py-2 whitespace-nowrap text-slate-700 select-none">
               <span className="inline-flex items-center gap-1.5">
                 <span className="font-mono text-slate-400 font-bold text-sm leading-none">{isLast ? '└─' : '├─'}</span>
@@ -361,22 +368,13 @@ function ProductWithStagesGroup({
                 <Button
                   variant="ghost"
                   size="sm"
-                  title="Move stage up"
-                  aria-label="Move stage up"
-                  disabled={idx === 0}
-                  onClick={() => onMoveStage(w, 'up')}
+                  title="Drag up or down to reorder stage"
+                  aria-label="Drag to reorder stage"
+                  disabled={stages.length < 2}
+                  onPointerDown={(e) => startDrag(e, w.id, idx)}
+                  className="cursor-grab active:cursor-grabbing touch-none"
                 >
-                  <ArrowUp className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  title="Move stage down"
-                  aria-label="Move stage down"
-                  disabled={idx === stages.length - 1}
-                  onClick={() => onMoveStage(w, 'down')}
-                >
-                  <ArrowDown className="h-3.5 w-3.5" />
+                  <GripVertical className="h-4 w-4 text-slate-400" />
                 </Button>
                 <Button variant="ghost" size="sm" title="Edit Stage" onClick={() => onEditStage(w)}>
                   <Pencil className="h-3.5 w-3.5" />

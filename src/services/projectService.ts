@@ -3,6 +3,7 @@ import { isArchivedStatus, type Project } from '@/types'
 import { clampProgress, newId, nowIso, todayStr } from '@/utils/helpers'
 import { ValidationError, checkDateOrder, requireText } from '@/utils/validation'
 import { logActivity } from './activityService'
+import { pushUndoSnapshot } from './undoService'
 
 export type ProjectInput = Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'isSample'>
 
@@ -27,6 +28,7 @@ export async function createProject(input: ProjectInput): Promise<string> {
   await assertCodeUnique(code)
   const name = normalized.name.trim() || code
   const packageType = (normalized.packageType || '').trim()
+  await pushUndoSnapshot(`Create product ${name}`)
   const now = nowIso()
   const id = newId()
   await db.transaction('rw', db.projects, db.activityLogs, async () => {
@@ -56,6 +58,7 @@ export async function updateProject(id: string, input: ProjectInput) {
   }
   const name = input.name.trim() || code
   const packageType = (input.packageType || '').trim()
+  await pushUndoSnapshot(`Update product ${name}`)
   await db.transaction('rw', db.projects, db.activityLogs, async () => {
     await db.projects.update(id, {
       ...input,
@@ -77,6 +80,7 @@ export async function updateProject(id: string, input: ProjectInput) {
 export async function deleteProject(id: string) {
   const p = await db.projects.get(id)
   if (!p) return
+  await pushUndoSnapshot(`Delete product ${p.name}`)
   await db.transaction(
     'rw',
     [db.projects, db.workstreams, db.tasks, db.milestones, db.activityLogs],

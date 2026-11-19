@@ -11,39 +11,39 @@ html.dark {
 }
 
 body {
-  background-color: #f4fbf7;
+  background-color: #e6ece9;
   @apply text-slate-800 antialiased transition-colors duration-200;
 }
 
 html.dark body {
-  background-color: #0f172a;
-  color: #f1f5f9;
+  background-color: #0e1718;
+  color: #edf4f4;
 }
 
-/* Make borders, table lines, and dividers clearly visible across the entire website */
+/* Subtle, crisp borders across the website */
 .border-slate-100 {
-  border-color: #cbd5e1 !important;
+  border-color: #d6e4e6 !important;
 }
 .border-slate-200 {
-  border-color: #94a3b8 !important;
+  border-color: #badfe7 !important;
 }
 .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
-  border-color: #cbd5e1 !important;
+  border-color: #d6e4e6 !important;
 }
 
-/* Clear grid lines inside all data tables */
+/* Clean grid lines inside data tables */
 table th,
 table td {
-  border-bottom: 1px solid #cbd5e1;
-  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #d6e4e6;
+  border-right: 1px solid #edf4f4;
 }
 table th:last-child,
 table td:last-child {
   border-right: none;
 }
 table thead th {
-  border-bottom: 2px solid #a7f3d0;
-  background-color: #ecfdf5;
+  border-bottom: 1px solid #badfe7;
+  background-color: #f6f6f2;
 }
 
 /* Dark mode overrides */
@@ -52,7 +52,7 @@ html.dark .bg-white\/70,
 html.dark .bg-white\/80,
 html.dark .bg-white\/90,
 html.dark .bg-white\/95 {
-  background-color: #1e293b !important;
+  background-color: #16221f !important;
 }
 html.dark .bg-slate-50,
 html.dark .bg-slate-50\/50,
@@ -60,13 +60,13 @@ html.dark .bg-slate-50\/60,
 html.dark .bg-slate-50\/70,
 html.dark .bg-slate-50\/75,
 html.dark .bg-slate-50\/80 {
-  background-color: #162032 !important;
+  background-color: #111b18 !important;
 }
 html.dark .bg-slate-100 {
-  background-color: #273549 !important;
+  background-color: #1b2a26 !important;
 }
 html.dark .bg-slate-200 {
-  background-color: #334155 !important;
+  background-color: #233530 !important;
 }
 html.dark .hover\:bg-slate-50:hover,
 html.dark .hover\:bg-slate-50\/70:hover,
@@ -133,8 +133,13 @@ html.dark .bg-amber-100,
 html.dark .bg-amber-100\/90 {
   background-color: rgba(245, 158, 11, 0.24) !important;
 }
-html.dark .bg-orange-100 {
+html.dark .bg-orange-100,
+html.dark .bg-orange-100\/90 {
   background-color: rgba(249, 115, 22, 0.24) !important;
+}
+html.dark .bg-yellow-100,
+html.dark .bg-yellow-100\/90 {
+  background-color: rgba(234, 179, 8, 0.22) !important;
 }
 html.dark .bg-red-50,
 html.dark .bg-rose-50 {
@@ -188,8 +193,13 @@ html.dark .text-blue-950 {
 html.dark .text-teal-700 {
   color: #5eead4 !important;
 }
-html.dark .text-orange-900 {
+html.dark .text-orange-900,
+html.dark .text-orange-950 {
   color: #fdba74 !important;
+}
+html.dark .text-yellow-900,
+html.dark .text-yellow-950 {
+  color: #fde047 !important;
 }
 html.dark .text-rose-700,
 html.dark .text-rose-900,
@@ -238,7 +248,7 @@ html.dark .border-slate-100,
 html.dark .border-slate-200,
 html.dark .border-slate-200\/70,
 html.dark .border-slate-300 {
-  border-color: #334155 !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
 }
 html.dark .border-sky-400,
 html.dark .border-blue-200,
@@ -258,8 +268,12 @@ html.dark .border-emerald-400,
 html.dark .border-emerald-500 {
   border-color: rgba(52, 211, 153, 0.35) !important;
 }
-html.dark .border-orange-300 {
+html.dark .border-orange-300,
+html.dark .border-orange-400 {
   border-color: rgba(251, 146, 60, 0.45) !important;
+}
+html.dark .border-yellow-400 {
+  border-color: rgba(250, 204, 21, 0.45) !important;
 }
 html.dark .border-rose-200,
 html.dark .border-rose-300,
@@ -288,26 +302,26 @@ html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
 
 html.dark table th,
 html.dark table td {
-  border-bottom-color: #334155;
-  border-right-color: #293548;
+  border-bottom-color: rgba(148, 163, 184, 0.14);
+  border-right-color: rgba(148, 163, 184, 0.1);
 }
 html.dark table thead th {
-  border-bottom-color: #475569;
-  background-color: #162032;
+  border-bottom-color: rgba(110, 180, 152, 0.22);
+  background-color: #111b18;
   color: #e2e8f0;
 }
 
 html.dark input,
 html.dark select,
 html.dark textarea {
-  background-color: #0f172a !important;
-  color: #f1f5f9 !important;
-  border-color: #334155 !important;
+  background-color: #111b18 !important;
+  color: #eef4f1 !important;
+  border-color: rgba(110, 180, 152, 0.22) !important;
 }
 
 html.dark .bg-primary-soft {
-  background-color: rgba(16, 185, 129, 0.18) !important;
+  background-color: rgba(56, 128, 135, 0.24) !important;
 }
 html.dark .text-primary {
-  color: #34d399 !important;
+  color: #6fb3b8 !important;
 }

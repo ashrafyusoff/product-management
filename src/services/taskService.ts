@@ -3,6 +3,7 @@ import type { Task } from '@/types'
 import { clampProgress, newId, nowIso, todayStr } from '@/utils/helpers'
 import { ValidationError, checkDateOrder, requireText } from '@/utils/validation'
 import { logActivity } from './activityService'
+import { pushUndoSnapshot } from './undoService'
 
 export type TaskInput = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'isSample'>
 
@@ -30,6 +31,7 @@ export async function createTask(input: TaskInput) {
   const withStart = { ...input, startDate: input.startDate || todayStr() }
   validate(withStart)
   const data = normalise(withStart)
+  await pushUndoSnapshot(`Create task "${data.name}"`)
   const now = nowIso()
   const id = newId()
   await db.transaction('rw', [db.tasks, db.activityLogs], async () => {
@@ -43,6 +45,7 @@ export async function updateTask(id: string, input: TaskInput) {
   const data = normalise(input)
   const old = await db.tasks.get(id)
   if (!old) throw new ValidationError('Task no longer exists.')
+  await pushUndoSnapshot(`Update task "${data.name}"`)
   await db.transaction('rw', [db.tasks, db.activityLogs], async () => {
     await db.tasks.update(id, { ...data, updatedAt: nowIso() })
     const changed = old.status !== data.status
@@ -54,6 +57,7 @@ export async function updateTask(id: string, input: TaskInput) {
 export async function deleteTask(id: string) {
   const t = await db.tasks.get(id)
   if (!t) return
+  await pushUndoSnapshot(`Delete task "${t.name}"`)
   await db.transaction('rw', [db.tasks, db.activityLogs], async () => {
     await db.tasks.delete(id)
     await logActivity('Task', id, t.projectId, 'Deleted', `Task "${t.name}" deleted`)
@@ -65,6 +69,7 @@ export async function rescheduleTask(id: string, newDueDate: string, newStartTim
   if (!old) throw new ValidationError('Task no longer exists.')
   const timeChanged = (newStartTime !== undefined && newStartTime !== old.startTime) || (newEndTime !== undefined && newEndTime !== old.endTime)
   if (old.dueDate === newDueDate && !timeChanged) return
+  await pushUndoSnapshot(`Move task "${old.name}"`)
   let startDate = old.startDate
   if (old.startDate && old.dueDate && old.dueDate !== newDueDate) {
     const delta = new Date(newDueDate).getTime() - new Date(old.dueDate).getTime()
@@ -85,6 +90,7 @@ export async function rescheduleTask(id: string, newDueDate: string, newStartTim
 export async function duplicateTaskToDate(id: string, newDueDate: string) {
   const old = await db.tasks.get(id)
   if (!old) throw new ValidationError('Task no longer exists.')
+  await pushUndoSnapshot(`Copy task "${old.name}"`)
   let startDate = old.startDate
   if (old.startDate && old.dueDate) {
     const delta = new Date(newDueDate).getTime() - new Date(old.dueDate).getTime()
@@ -115,6 +121,7 @@ export async function duplicateTaskToDate(id: string, newDueDate: string) {
 
 export async function updateTasksPriority(ids: string[], priority: Task['priority']) {
   if (ids.length === 0) return
+  await pushUndoSnapshot(`Set priority to ${priority}`)
   const now = nowIso()
   await db.transaction('rw', [db.tasks, db.activityLogs], async () => {
     for (const id of ids) {
@@ -122,6 +129,25 @@ export async function updateTasksPriority(ids: string[], priority: Task['priorit
       if (!old || old.priority === priority) continue
       await db.tasks.update(id, { priority, updatedAt: now })
       await logActivity('Task', id, old.projectId, 'Updated', `Task "${old.name}" priority: ${old.priority} → ${priority}`)
+    }
+  })
+}
+
+export async function updateTasksStatus(ids: string[], status: Task['status']) {
+  if (ids.length === 0) return
+  await pushUndoSnapshot(`Mark ${ids.length} task(s) ${status}`)
+  const now = nowIso()
+  await db.transaction('rw', [db.tasks, db.activityLogs], async () => {
+    for (const id of ids) {
+      const old = await db.tasks.get(id)
+      if (!old || old.status === status) continue
+      const patch: Partial<Task> = { status, updatedAt: now }
+      if (status === 'Completed') {
+        patch.progress = 100
+        if (!old.completionDate) patch.completionDate = todayStr()
+      }
+      await db.tasks.update(id, patch)
+      await logActivity('Task', id, old.projectId, 'Status Changed', `Task "${old.name}" status: ${old.status} → ${status}`)
     }
   })
 }

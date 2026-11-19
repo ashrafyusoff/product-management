@@ -3,6 +3,7 @@ import { isStageDone, type Workstream } from '@/types'
 import { clampProgress, newId, nowIso } from '@/utils/helpers'
 import { ValidationError, checkDateOrder, requireText } from '@/utils/validation'
 import { logActivity } from './activityService'
+import { pushUndoSnapshot } from './undoService'
 
 export type WorkstreamInput = Omit<Workstream, 'id' | 'createdAt' | 'updatedAt' | 'isSample'>
 
@@ -28,6 +29,7 @@ function normalise(input: WorkstreamInput): WorkstreamInput {
 export async function createWorkstream(input: WorkstreamInput) {
   validate(input)
   const data = normalise(input)
+  await pushUndoSnapshot(`Add stage ${data.category}`)
   const now = nowIso()
   const id = newId()
   await db.transaction('rw', db.workstreams, db.activityLogs, async () => {
@@ -44,6 +46,7 @@ export async function updateWorkstream(id: string, input: WorkstreamInput) {
   const old = await db.workstreams.get(id)
   if (!old) throw new ValidationError('Stage no longer exists.')
   const data = normalise(input)
+  await pushUndoSnapshot(`Update stage ${data.category}`)
   await db.transaction('rw', db.workstreams, db.activityLogs, async () => {
     await db.workstreams.update(id, { ...data, order: data.order ?? old.order, updatedAt: nowIso() })
     const changed = old.status !== data.status
@@ -75,9 +78,25 @@ export async function moveWorkstreamOrder(projectId: string, workstreamId: strin
   })
 }
 
+export async function reorderWorkstreams(projectId: string, orderedIds: string[]) {
+  await db.transaction('rw', db.workstreams, async () => {
+    const items = await db.workstreams.where('projectId').equals(projectId).toArray()
+    const byId = new Map(items.map((w) => [w.id, w]))
+    const now = nowIso()
+    await Promise.all(
+      orderedIds.map((id, i) => {
+        const w = byId.get(id)
+        if (!w || w.order === i) return Promise.resolve()
+        return db.workstreams.update(id, { order: i, updatedAt: now })
+      }),
+    )
+  })
+}
+
 export async function deleteWorkstream(id: string) {
   const w = await db.workstreams.get(id)
   if (!w) return
+  await pushUndoSnapshot(`Delete stage ${w.category}`)
   await db.transaction('rw', [db.workstreams, db.tasks, db.milestones, db.activityLogs], async () => {
     await db.tasks.where('workstreamId').equals(id).modify({ workstreamId: '' })
     await db.milestones.where('workstreamId').equals(id).modify({ workstreamId: '' })
