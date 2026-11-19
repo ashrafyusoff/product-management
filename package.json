@@ -9,6 +9,7 @@
     "start": "node server.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "publish:share": "node scripts/publish-share.mjs",
     "test": "vitest run"
   },
   "dependencies": {
