@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { HashRouter, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/layouts/AppLayout'
+import { initFileSync } from '@/database/fileSync'
 import { OverviewPage } from '@/pages/OverviewPage'
 import { ProjectsPage } from '@/pages/ProjectsPage'
 import { ProjectDetailPage } from '@/pages/ProjectDetailPage'
@@ -10,6 +12,10 @@ import { SettingsPage } from '@/pages/SettingsPage'
 
 // One app, one layout. Only the middle part changes when you click the sidebar (client-side navigation).
 export default function App() {
+  useEffect(() => {
+    void initFileSync()
+  }, [])
+
   return (
     <HashRouter>
       <Routes>

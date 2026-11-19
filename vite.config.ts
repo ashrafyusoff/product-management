@@ -3,8 +3,13 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
-  base: '/product-management/',
+  base: './',
   plugins: [react()],
+  server: {
+    proxy: {
+      '/api': 'http://localhost:3001',
+    },
+  },
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
   build: {
     rollupOptions: {
