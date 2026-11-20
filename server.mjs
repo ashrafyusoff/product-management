@@ -1,10 +1,12 @@
 import http from 'node:http'
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT || 3001)
+const HOST = process.env.HOST || '0.0.0.0'
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data')
 const DB_FILE = path.join(DATA_DIR, 'db.json')
 const DIST_DIR = path.join(__dirname, 'dist')
@@ -145,7 +147,8 @@ const server = http.createServer(async (req, res) => {
 })
 
 await ensureDbFile()
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, HOST, () => {
   console.log(`[Product Management] Local DB file: ${DB_FILE}`)
-  console.log(`[Product Management] Server listening at http://localhost:${PORT}`)
+  console.log(`[Product Management] Local:   http://localhost:${PORT}`)
+  console.log(`[Product Management] Network: http://${os.hostname()}:${PORT}`)
 })
