@@ -104,6 +104,44 @@ export function Field({ label, children, required }: { label: string; children: 
 }
 export const Input = (p: InputHTMLAttributes<HTMLInputElement>) => <input {...p} className={cn(inputCls, p.className)} />
 export const Textarea = (p: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea rows={2} {...p} className={cn(inputCls, p.className)} />
+export function AutoResizeTextarea({
+  className,
+  value,
+  onChange,
+  rows = 1,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    if (el.scrollHeight > 0) {
+      el.style.height = `${el.scrollHeight}px`
+    }
+  }, [value])
+
+  return (
+    <textarea
+      ref={ref}
+      rows={rows}
+      value={value}
+      onChange={(e) => {
+        onChange?.(e)
+        const el = ref.current
+        if (el) {
+          el.style.height = 'auto'
+          if (el.scrollHeight > 0) {
+            el.style.height = `${el.scrollHeight}px`
+          }
+        }
+      }}
+      className={cn(inputCls, 'resize-none overflow-hidden transition-[height] duration-75 block', className)}
+      {...props}
+    />
+  )
+}
 export function Select({ options, ...p }: SelectHTMLAttributes<HTMLSelectElement> & { options: readonly (string | { value: string; label: string })[] }) {
   return (
     <select {...p} className={cn(inputCls, p.className)}>

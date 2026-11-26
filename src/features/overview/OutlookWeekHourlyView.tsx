@@ -8,6 +8,7 @@ export interface CalendarItemRef {
   kind: 'task' | 'milestone'
   id: string
   name: string
+  fromOverdue?: boolean
 }
 
 export interface CalendarClipboard {
@@ -143,6 +144,9 @@ export function OutlookWeekHourlyView({
   today,
   projectCode,
   projectName,
+  projectNickname,
+  taskSubLabel,
+  wrapTaskNames,
   selectedIds,
   selectedDay,
   draggingId,
@@ -170,6 +174,9 @@ export function OutlookWeekHourlyView({
   today: string
   projectCode: (pid: string) => string
   projectName: (pid: string) => string
+  projectNickname?: (pid: string) => string
+  taskSubLabel?: (t: Task) => string
+  wrapTaskNames?: boolean
   selectedIds: Set<string>
   selectedDay: string
   draggingId: string
@@ -518,16 +525,27 @@ export function OutlookWeekHourlyView({
                       />
 
                       <div className="flex items-start gap-1 min-w-0 h-full">
-                        <CheckSquare className="h-3 w-3 shrink-0 mt-0.5" />
+                        {t.actionable === false ? (
+                          <span className="text-[9px] font-bold text-slate-500 bg-slate-200/80 px-1 py-0.5 rounded shrink-0 mt-0.5" title="FYI of the day">FYI</span>
+                        ) : (
+                          <CheckSquare className="h-3 w-3 shrink-0 mt-0.5" />
+                        )}
                         <div className="min-w-0 flex-1">
-                          <p className="text-[11px] font-semibold truncate leading-tight">
-                            {isCompact ? `${t.name} · ${projectName(t.projectId)}` : t.name}
-                          </p>
-                          {!isCompact && (
-                            <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
-                              {isResizingThis ? `${startLabel}–${endLabel}` : projectName(t.projectId)}
-                            </p>
-                          )}
+                          {(() => {
+                            const displaySub = taskSubLabel ? taskSubLabel(t) : (projectNickname ? projectNickname(t.projectId) : projectName(t.projectId))
+                            return (
+                              <>
+                                <p className={cn("text-[11px] font-semibold leading-tight", wrapTaskNames ? "whitespace-normal break-words" : "truncate")}>
+                                  {isCompact ? `${t.name} · ${displaySub}` : t.name}
+                                </p>
+                                {!isCompact && (
+                                  <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
+                                    {isResizingThis ? `${startLabel}–${endLabel}` : displaySub}
+                                  </p>
+                                )}
+                              </>
+                            )
+                          })()}
                         </div>
                         <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 bg-white/90 rounded px-0.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => onCopy(ref)} title="Copy task" className="p-0.5 hover:text-primary"><Copy className="h-3 w-3" /></button>

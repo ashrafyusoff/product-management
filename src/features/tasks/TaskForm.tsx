@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { NON_NPI_TASK_STATUSES, PRIORITIES, TASK_STATUSES, type Project, type Task, type Workstream } from '@/types'
 import { createTask, emptyTask, updateTask, type TaskInput } from '@/services/taskService'
 import { useTable } from '@/hooks/useTable'
 import { todayStr } from '@/utils/helpers'
 import { errorMessage } from '@/utils/validation'
-import { Button, Field, FormError, Input, LeftSlideDrawer, Modal, Select, Textarea } from '@/components/ui'
+import { AutoResizeTextarea, Button, Field, FormError, Input, LeftSlideDrawer, Modal, Select } from '@/components/ui'
 
 // `defaultProjectId` pre-selects the project when adding from inside a project.
 // `nonNpiOnly` restricts the project dropdown strictly to Side-Quest items.
@@ -48,26 +48,127 @@ export function TaskForm({
   variant?: 'modal' | 'drawer'
   onClose: () => void
 }) {
-  const title = task ? 'Edit Task' : 'Add Task'
+  const [activeTask, setActiveTask] = useState<Task | undefined>(task)
+  const [pendingTask, setPendingTask] = useState<Task | undefined>()
+  const [showPrompt, setShowPrompt] = useState(false)
+  const dirtyRef = useRef(false)
+  const saveCurrentTaskRef = useRef<(() => Promise<boolean>) | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setActiveTask(task)
+      setPendingTask(undefined)
+      setShowPrompt(false)
+      dirtyRef.current = false
+      return
+    }
+    // If open and task prop changed to a different task
+    if (task && activeTask && task.id !== activeTask.id) {
+      if (dirtyRef.current) {
+        setPendingTask(task)
+        setShowPrompt(true)
+      } else {
+        setActiveTask(task)
+      }
+    } else if (!activeTask && task) {
+      setActiveTask(task)
+    }
+  }, [task?.id, task?.updatedAt, open])
+
+  const handleClose = () => {
+    if (dirtyRef.current) {
+      if (window.confirm(`Discard unsaved changes to "${activeTask?.name || 'this task'}"?`)) {
+        dirtyRef.current = false
+        onClose()
+      }
+    } else {
+      onClose()
+    }
+  }
+
+  const title = activeTask ? 'Edit Task' : 'Add Task'
   const content = (
-    <Body
-      key={`${open ? 'open' : 'closed'}-${task?.id ?? 'new'}-${task?.updatedAt ?? ''}-${defaultProjectId ?? ''}-${defaultDueDate ?? ''}-${nonNpiOnly ? 'nonnpi' : 'all'}`}
-      task={task}
-      defaultProjectId={defaultProjectId}
-      defaultDueDate={defaultDueDate}
-      nonNpiOnly={nonNpiOnly}
-      onClose={onClose}
-    />
+    <>
+      <Body
+        key={`${open ? 'open' : 'closed'}-${activeTask?.id ?? 'new'}-${activeTask?.updatedAt ?? ''}-${defaultProjectId ?? ''}-${defaultDueDate ?? ''}-${nonNpiOnly ? 'nonnpi' : 'all'}`}
+        task={activeTask}
+        defaultProjectId={defaultProjectId}
+        defaultDueDate={defaultDueDate}
+        nonNpiOnly={nonNpiOnly}
+        onClose={onClose}
+        onDirtyChange={(dirty) => {
+          dirtyRef.current = dirty
+        }}
+        registerSave={(fn) => {
+          saveCurrentTaskRef.current = fn
+        }}
+      />
+      <Modal open={showPrompt} onClose={() => setShowPrompt(false)} title="Unsaved Changes" compact>
+        <div className="space-y-3">
+          <p className="text-sm text-slate-700">
+            You have unsaved changes on <b>"{activeTask?.name || 'this task'}"</b>.
+          </p>
+          <p className="text-xs text-slate-500">
+            Do you want to save before opening <b>"{pendingTask?.name || 'another task'}"</b>?
+          </p>
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setPendingTask(undefined)
+                setShowPrompt(false)
+              }}
+            >
+              Keep Editing
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                if (pendingTask) {
+                  setActiveTask(pendingTask)
+                  setPendingTask(undefined)
+                }
+                dirtyRef.current = false
+                setShowPrompt(false)
+              }}
+            >
+              Discard & Open
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={async () => {
+                if (saveCurrentTaskRef.current) {
+                  const ok = await saveCurrentTaskRef.current()
+                  if (ok) {
+                    if (pendingTask) {
+                      setActiveTask(pendingTask)
+                      setPendingTask(undefined)
+                    }
+                    dirtyRef.current = false
+                    setShowPrompt(false)
+                  }
+                }
+              }}
+            >
+              Save & Open
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </>
   )
   if (variant === 'drawer') {
     return (
-      <LeftSlideDrawer open={open} onClose={onClose} title={title}>
+      <LeftSlideDrawer open={open} onClose={handleClose} title={title}>
         {open ? content : null}
       </LeftSlideDrawer>
     )
   }
   return (
-    <Modal open={open} onClose={onClose} title={title} compact>
+    <Modal open={open} onClose={handleClose} title={title} compact>
       {content}
     </Modal>
   )
@@ -79,23 +180,54 @@ function Body({
   defaultDueDate,
   nonNpiOnly,
   onClose,
+  onDirtyChange,
+  registerSave,
 }: {
   task?: Task
   defaultProjectId?: string
   defaultDueDate?: string
   nonNpiOnly?: boolean
   onClose: () => void
+  onDirtyChange: (dirty: boolean) => void
+  registerSave: (fn: () => Promise<boolean>) => void
 }) {
   const projects = useTable<Project>('projects') ?? []
   const workstreams = useTable<Workstream>('workstreams') ?? []
-  const [form, setForm] = useState<TaskInput>(() => {
+
+  const initialForm = useMemo<TaskInput>(() => {
     if (task) {
-      return { ...task, startDate: task.startDate || task.createdAt?.slice(0, 10) || todayStr() }
+      return {
+        ...task,
+        startDate: task.startDate || task.createdAt?.slice(0, 10) || todayStr(),
+        actionable: task.actionable !== false,
+      }
     }
     const base = emptyTask(defaultProjectId)
     if (defaultDueDate) base.dueDate = defaultDueDate
     return base
-  })
+  }, [task, defaultProjectId, defaultDueDate])
+
+  const [form, setForm] = useState<TaskInput>(() => initialForm)
+
+  const isDirty = useMemo(() => {
+    return (
+      form.name !== (initialForm.name || '') ||
+      form.projectId !== (initialForm.projectId || '') ||
+      form.workstreamId !== (initialForm.workstreamId || '') ||
+      form.priority !== initialForm.priority ||
+      form.status !== initialForm.status ||
+      form.dueDate !== (initialForm.dueDate || '') ||
+      form.startTime !== (initialForm.startTime || '') ||
+      form.endTime !== (initialForm.endTime || '') ||
+      form.completionDate !== (initialForm.completionDate || '') ||
+      form.remarks !== (initialForm.remarks || '') ||
+      (form.actionable !== false) !== (initialForm.actionable !== false)
+    )
+  }, [form, initialForm])
+
+  useEffect(() => {
+    onDirtyChange(isDirty)
+  }, [isDirty, onDirtyChange])
 
   const diffMins = toMins(form.endTime) - toMins(form.startTime)
   const matchedPreset = DURATION_PRESETS.find((p) => p.value !== 'custom' && Number(p.value) === diffMins)?.value ?? 'custom'
@@ -122,27 +254,67 @@ function Body({
     }))
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
+  const doSave = async (): Promise<boolean> => {
     setError('')
     try {
       const payload: TaskInput = {
         ...form,
         startDate: form.startDate || todayStr(),
         assignee: '',
+        actionable: form.actionable !== false,
       }
       if (task) await updateTask(task.id, payload)
       else await createTask(payload)
-      onClose()
+      return true
     } catch (err) {
       setError(errorMessage(err))
+      return false
+    }
+  }
+
+  useEffect(() => {
+    registerSave(doSave)
+  })
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    const ok = await doSave()
+    if (ok) {
+      onClose()
     }
   }
 
   return (
     <form onSubmit={submit} className="space-y-2.5">
       <FormError message={error} />
-      <Field label="Task Name" required><Input value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
+      <Field label="Task Name" required>
+        <AutoResizeTextarea
+          rows={1}
+          value={form.name}
+          onChange={(e) => set('name', e.target.value)}
+          placeholder="Task name…"
+        />
+      </Field>
+
+      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2">
+        <div>
+          <span className="block text-xs font-semibold text-slate-800">Actionable Task</span>
+          <span className="block text-[11px] text-slate-500">
+            {form.actionable !== false
+              ? 'Ticked: Task can be executed'
+              : 'Unticked: FYI of the day (informational note)'}
+          </span>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={form.actionable !== false}
+            onChange={(e) => set('actionable', e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+          />
+        </label>
+      </div>
+
       <div className="grid sm:grid-cols-2 gap-2.5">
         <Field label={nonNpiOnly ? 'Side-Quest' : 'Product / Workstream'} required>
           <Select
@@ -154,7 +326,7 @@ function Body({
                 value: p.id,
                 label: p.isNonNpi
                   ? `${p.code} – ${p.name}`
-                  : `${p.name}${p.packageType ? ` (${p.packageType})` : ''} [${p.code}]`,
+                  : `${p.name}${p.nickname ? ` (${p.nickname})` : ''}${p.packageType ? ` (${p.packageType})` : ''} [${p.code}]`,
               })),
             ]}
           />
@@ -223,9 +395,16 @@ function Body({
           <Input type="date" value={form.completionDate} onChange={(e) => set('completionDate', e.target.value)} />
         </Field>
       </div>
-      <Field label="Remarks"><Textarea value={form.remarks} onChange={(e) => set('remarks', e.target.value)} /></Field>
+      <Field label="Remarks">
+        <AutoResizeTextarea
+          rows={2}
+          value={form.remarks}
+          onChange={(e) => set('remarks', e.target.value)}
+          placeholder="Remarks or notes…"
+        />
+      </Field>
       <div className="flex justify-end gap-2">
-        <Button type="button" onClick={onClose}>Cancel</Button>
+        <Button type="button" onClick={handleClose}>Cancel</Button>
         <Button type="submit" variant="primary">Save Task</Button>
       </div>
     </form>

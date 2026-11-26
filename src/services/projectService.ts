@@ -27,6 +27,7 @@ export async function createProject(input: ProjectInput): Promise<string> {
   const code = normalized.code.trim()
   await assertCodeUnique(code)
   const name = normalized.name.trim() || code
+  const nickname = (normalized.nickname || '').trim()
   const packageType = (normalized.packageType || '').trim()
   await pushUndoSnapshot(`Create product ${name}`)
   const now = nowIso()
@@ -36,13 +37,14 @@ export async function createProject(input: ProjectInput): Promise<string> {
       ...normalized,
       code,
       name,
+      nickname,
       packageType,
       progress: clampProgress(normalized.progress),
       id,
       createdAt: now,
       updatedAt: now,
     })
-    await logActivity('Product', id, id, 'Created', `Product ${name}${packageType ? ` (${packageType})` : ''} [${code}] created`)
+    await logActivity('Product', id, id, 'Created', `Product ${name}${nickname ? ` (${nickname})` : ''}${packageType ? ` (${packageType})` : ''} [${code}] created`)
   })
   return id
 }
@@ -57,6 +59,7 @@ export async function updateProject(id: string, input: ProjectInput) {
     throw new ValidationError('Archived products cannot be returned to active status.')
   }
   const name = input.name.trim() || code
+  const nickname = (input.nickname || '').trim()
   const packageType = (input.packageType || '').trim()
   await pushUndoSnapshot(`Update product ${name}`)
   await db.transaction('rw', db.projects, db.activityLogs, async () => {
@@ -64,6 +67,7 @@ export async function updateProject(id: string, input: ProjectInput) {
       ...input,
       code,
       name,
+      nickname,
       packageType,
       progress: clampProgress(input.progress),
       updatedAt: nowIso(),
@@ -97,6 +101,7 @@ export async function deleteProject(id: string) {
 export const emptyProject = (): ProjectInput => ({
   code: '',
   name: '',
+  nickname: '',
   packageType: '',
   description: '',
   objectives: '',
