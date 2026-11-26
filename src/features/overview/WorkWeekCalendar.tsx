@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CalendarDays, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Clock, Copy, Flag, GripVertical, Plus, Scissors, Sun, X } from 'lucide-react'
-import type { Milestone, Priority, Project, Task } from '@/types'
+import type { Milestone, Priority, Project, Task, Workstream } from '@/types'
 import { Badge, Button, Card } from '@/components/ui'
 import { usePersistedState } from '@/hooks/usePersistedState'
 import { duplicateTaskToDate, rescheduleTask, updateTasksPriority, updateTasksStatus } from '@/services/taskService'
@@ -119,7 +119,11 @@ const PRIORITY_LEGEND: { priority: Priority; boxCls: string }[] = [
 ]
 
 // Task colour is driven by Priority (High = orange, Medium = yellow, Completed = emerald green).
+// Non-actionable (FYI) tasks use a dimmer gray border & muted background.
 function taskCardStyle(t: Task, _today: string): string {
+  if (t.actionable === false) {
+    return 'border-slate-300 border-l-4 border-l-slate-400 bg-slate-50 text-slate-500 opacity-70'
+  }
   if (t.status === 'Completed') {
     return 'border-emerald-400 border-l-4 border-l-emerald-600 bg-emerald-100/90 text-emerald-950'
   }
@@ -150,6 +154,8 @@ export function WorkWeekCalendar({
   tasks,
   milestones,
   projects,
+  workstreams = [],
+  isEditOpen = false,
   baseMonday: controlledMonday,
   onBaseMondayChange,
   onAddTask,
@@ -159,6 +165,8 @@ export function WorkWeekCalendar({
   tasks: Task[]
   milestones: Milestone[]
   projects: Project[]
+  workstreams?: Workstream[]
+  isEditOpen?: boolean
   baseMonday?: Date
   onBaseMondayChange?: (d: Date) => void
   onAddTask?: (dueDate: string) => void
@@ -187,6 +195,7 @@ export function WorkWeekCalendar({
   const [priorityFilter, setPriorityFilter] = useState<string | null>(null)
   const [toast, setToast] = useState<string>('')
   const [miniCalOpen, setMiniCalOpen] = usePersistedState<boolean>('npi.calendar.miniCalOpen', true)
+  const [wrapTaskName, setWrapTaskName] = usePersistedState<boolean>('npi.calendar.wrapTaskName', false)
 
   const selectedIds = useMemo(() => new Set(selectedItems.map((i) => i.id)), [selectedItems])
 
@@ -292,6 +301,12 @@ export function WorkWeekCalendar({
     if (!p) return ''
     return p.packageType && !p.isNonNpi ? `${p.name} (${p.packageType})` : p.name || p.code
   }
+  const workstreamLabel = (wid: string): string => {
+    if (!wid) return ''
+    const w = workstreams.find((x) => x.id === wid)
+    if (!w) return ''
+    return w.name && w.name !== w.category ? `${w.category}: ${w.name}` : w.category
+  }
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, { tasks: Task[]; milestones: Milestone[] }>()
@@ -324,7 +339,7 @@ export function WorkWeekCalendar({
     )
   }
 
-  function handleItemClick(e: React.MouseEvent, ref: CalendarItemRef, dayYmd: string, _openEdit?: () => void) {
+  function handleItemClick(e: React.MouseEvent, ref: CalendarItemRef, dayYmd: string, openEdit?: () => void) {
     e.stopPropagation()
     setSelectedDay(dayYmd)
     if (e.ctrlKey || e.metaKey) {
@@ -332,6 +347,9 @@ export function WorkWeekCalendar({
       return
     }
     setSelectedItems([ref])
+    if (isEditOpen && openEdit) {
+      openEdit()
+    }
   }
 
   function handleItemDoubleClick(e: React.MouseEvent, ref: CalendarItemRef, dayYmd: string, openEdit: () => void) {
@@ -472,8 +490,15 @@ export function WorkWeekCalendar({
     try {
       const payload = JSON.parse(raw) as ItemRef
       if (payload.kind === 'task') {
-        await rescheduleTask(payload.id, targetYmd)
-        showToast(`Task moved to WW${String(ww).padStart(2, '0')} (${targetYmd})`)
+        // Feature 4: if dragged from overdue basket, default to 08:00–09:00
+        const isOverdue = overdueTaskIds.has(payload.id)
+        if (isOverdue) {
+          await rescheduleTask(payload.id, targetYmd, '08:00', '09:00')
+          showToast(`Task moved to WW${String(ww).padStart(2, '0')} (${targetYmd}) — defaulted to 08:00`)
+        } else {
+          await rescheduleTask(payload.id, targetYmd)
+          showToast(`Task moved to WW${String(ww).padStart(2, '0')} (${targetYmd})`)
+        }
       } else if (payload.kind === 'milestone') {
         await rescheduleMilestone(payload.id, targetYmd)
         showToast(`Milestone moved to WW${String(ww).padStart(2, '0')} (${targetYmd})`)
@@ -596,6 +621,25 @@ export function WorkWeekCalendar({
               <span className="text-[11px] text-slate-500">(4–10)</span>
             </label>
           )}
+
+          {/* Feature 5: Wrap task name toggle (tick/untick) in ribbon */}
+          <label
+            title={wrapTaskName ? 'Task names wrap to show full text — untick to truncate' : 'Task names truncated — tick to wrap full name'}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full border px-3 h-8 text-xs font-semibold cursor-pointer select-none transition-all',
+              wrapTaskName
+                ? 'bg-primary text-white border-primary shadow-sm'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-white/80 hover:text-slate-900',
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={wrapTaskName}
+              onChange={(e) => setWrapTaskName(e.target.checked)}
+              className="h-3.5 w-3.5 rounded accent-white cursor-pointer"
+            />
+            Wrap Text
+          </label>
 
           <div className="flex items-center gap-1">
             <Button
@@ -804,6 +848,8 @@ export function WorkWeekCalendar({
                   const isCut = clipboard?.mode === 'cut' && clipboard.items.some((i) => i.id === t.id)
                   const isSelected = selectedIds.has(t.id)
                   const isDimmed = !!priorityFilter && (priorityFilter === 'Completed' || t.priority !== priorityFilter)
+                  const isNonActionable = t.actionable === false
+                  const wsLabel = workstreamLabel(t.workstreamId)
                   return (
                     <div
                       key={t.id}
@@ -813,10 +859,12 @@ export function WorkWeekCalendar({
                       onDragEnd={onDragEnd}
                       onClick={(e) => handleItemClick(e, ref, t.dueDate, () => onEditTask?.(t))}
                       onDoubleClick={(e) => handleItemDoubleClick(e, ref, t.dueDate, () => onEditTask?.(t))}
-                      title={`Overdue Task: ${t.name}\nDue: ${t.dueDate}\nPriority: ${t.priority}\nClick to select · Double-click to edit · Drag onto calendar to reschedule`}
+                      title={`Overdue Task: ${t.name}\nDue: ${t.dueDate}\nPriority: ${t.priority}${wsLabel ? `\nStage: ${wsLabel}` : ''}\n${isNonActionable ? '📋 FYI only (not actionable)\n' : ''}Click to select · Double-click to edit · Drag onto calendar to reschedule`}
                       className={cn(
                         'group relative cursor-grab active:cursor-grabbing rounded-xl border px-2.5 py-1.5 text-[11px] shadow-sm transition-all select-none',
-                        taskCardStyle(t, today),
+                        isNonActionable
+                          ? 'border-slate-300 border-l-4 border-l-slate-400 bg-slate-50 text-slate-500 opacity-70'
+                          : taskCardStyle(t, today),
                         isSelected && 'ring-2 ring-primary',
                         isDimmed && !isSelected && 'opacity-25',
                         (draggingId === t.id || isCut) && 'opacity-45 border-dashed',
@@ -824,9 +872,10 @@ export function WorkWeekCalendar({
                     >
                       <div className="flex items-start gap-1 min-w-0">
                         <div className="min-w-0 flex-1">
-                          <p className="font-semibold truncate leading-tight">{t.name}</p>
+                          <p className={cn('font-semibold truncate leading-tight', isNonActionable && 'italic')}>{t.name}</p>
                           <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
-                            {t.priority} · Due {t.dueDate}
+                            {t.priority}{wsLabel ? ` · ${wsLabel}` : ''} · Due {t.dueDate}
+                            {isNonActionable && <span className="ml-1 opacity-70">(FYI)</span>}
                           </p>
                         </div>
                       </div>
@@ -862,6 +911,8 @@ export function WorkWeekCalendar({
             today={today}
             projectCode={projectCode}
             projectName={projectName}
+            workstreamLabel={workstreamLabel}
+            wrapTaskName={wrapTaskName}
             selectedIds={selectedIds}
             selectedDay={selectedDay}
             draggingId={draggingId}
@@ -1026,6 +1077,8 @@ export function WorkWeekCalendar({
                           const isCut = clipboard?.mode === 'cut' && clipboard.items.some((i) => i.id === t.id)
                           const isSelected = selectedIds.has(t.id)
                           const isDimmed = !!priorityFilter && (priorityFilter === 'Completed' ? t.status !== 'Completed' : t.status === 'Completed' || t.priority !== priorityFilter)
+                          const isNonActionable = t.actionable === false
+                          const wsLabel = workstreamLabel(t.workstreamId)
                           return (
                             <div
                               key={t.id}
@@ -1035,11 +1088,13 @@ export function WorkWeekCalendar({
                               onDragEnd={onDragEnd}
                               onClick={(e) => handleItemClick(e, ref, day.ymd, () => onEditTask?.(t))}
                               onDoubleClick={(e) => handleItemDoubleClick(e, ref, day.ymd, () => onEditTask?.(t))}
-                              title={`Task: ${t.name}\nProject: ${projectCode(t.projectId)}\nPriority: ${t.priority}\nStatus: ${t.status}\nDue: ${t.dueDate}\nClick to select · Double-click to edit · Ctrl+Click or ☑ to multi-select`}
+                              title={`Task: ${t.name}\nProject: ${projectCode(t.projectId)}${wsLabel ? `\nStage: ${wsLabel}` : ''}\nPriority: ${t.priority}\nStatus: ${t.status}\nDue: ${t.dueDate}\n${isNonActionable ? '📋 FYI only (not actionable)\n' : ''}Click to select · Double-click to edit · Ctrl+Click or ☑ to multi-select`}
                               className={cn(
                                 'group relative cursor-grab active:cursor-grabbing rounded-xl border shadow-sm transition-all select-none min-w-0',
                                 isTwoColMatrix ? 'px-1.5 py-1 text-[11px]' : 'px-2 py-1.5 text-xs',
-                                taskCardStyle(t, today),
+                                isNonActionable
+                                  ? 'border-slate-300 border-l-4 border-l-slate-400 bg-slate-50 text-slate-500 opacity-70'
+                                  : taskCardStyle(t, today),
                                 isSelected && 'ring-2 ring-primary',
                                 isDimmed && !isSelected && 'opacity-25',
                                 (draggingId === t.id || isCut) && 'opacity-45 border-dashed',
@@ -1047,10 +1102,13 @@ export function WorkWeekCalendar({
                             >
                               <div className="flex items-start gap-1 min-w-0">
                                 {!isTwoColMatrix && <GripVertical className="h-3.5 w-3.5 shrink-0 opacity-50 group-hover:opacity-90 mt-0.5" />}
-                                <CheckSquare className="h-3 w-3 shrink-0 mt-0.5" />
+                                <CheckSquare className={cn('h-3 w-3 shrink-0 mt-0.5', isNonActionable && 'opacity-40')} />
                                 <div className="min-w-0 flex-1">
-                                  <p className="font-semibold truncate leading-tight">{t.name}</p>
-                                  <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">{projectCode(t.projectId)} · {t.priority}</p>
+                                  <p className={cn('font-semibold leading-tight', wrapTaskName ? 'break-words' : 'truncate', isNonActionable && 'italic')}>{t.name}</p>
+                                  <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
+                                    {projectCode(t.projectId)}{wsLabel ? ` · ${wsLabel}` : ''} · {t.priority}
+                                    {isNonActionable && <span className="ml-1 opacity-70">(FYI)</span>}
+                                  </p>
                                 </div>
                                 <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 bg-white/90 rounded px-1 py-0.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
                                   <button onClick={() => handleCopy(ref)} title="Copy task" className="p-0.5 hover:text-primary"><Copy className="h-3 w-3" /></button>

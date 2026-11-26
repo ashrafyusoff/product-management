@@ -155,5 +155,5 @@ export async function updateTasksStatus(ids: string[], status: Task['status']) {
 export const emptyTask = (projectId = ''): TaskInput => ({
   projectId, workstreamId: '', name: '', assignee: '', startDate: todayStr(), dueDate: '',
   startTime: '09:00', endTime: '10:00', completionDate: '',
-  priority: 'Medium', status: 'Not Started', progress: 0, remarks: '',
+  priority: 'Medium', status: 'Not Started', progress: 0, remarks: '', actionable: true,
 })

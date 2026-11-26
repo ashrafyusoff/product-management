@@ -63,8 +63,24 @@ export function OverviewPage() {
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | undefined>()
   const [taskDefaultDueDate, setTaskDefaultDueDate] = useState<string | undefined>()
+  const [taskFormDirty, setTaskFormDirty] = useState(false)
   const [milestoneModalOpen, setMilestoneModalOpen] = useState(false)
   const [editingMilestone, setEditingMilestone] = useState<Milestone | undefined>()
+
+  // Feature 3: single-click switching — if drawer is already open, switch task with one click.
+  // Prompt only if the previous task has unsaved changes pending to save.
+  function handleEditTask(t: Task) {
+    setMilestoneModalOpen(false)
+    setTaskDefaultDueDate(undefined)
+    if (taskModalOpen && editingTask && editingTask.id === t.id) return
+    if (taskModalOpen && taskFormDirty) {
+      const ok = window.confirm('You have unsaved changes on the current task. Discard them and open the selected task?\n\n(Click Cancel to stay and save first)')
+      if (!ok) return
+    }
+    setTaskFormDirty(false)
+    setEditingTask(t)
+    setTaskModalOpen(true)
+  }
 
   // Modal for adding/editing a Product Stage directly from the Product Stage Matrix
   const [stageModalOpen, setStageModalOpen] = useState(false)
@@ -166,8 +182,10 @@ export function OverviewPage() {
           tasks={tasks}
           milestones={milestones}
           projects={projects}
+          workstreams={workstreams}
+          isEditOpen={taskModalOpen || milestoneModalOpen}
           onAddTask={(dueDate) => { setMilestoneModalOpen(false); setEditingTask(undefined); setTaskDefaultDueDate(dueDate); setTaskModalOpen(true) }}
-          onEditTask={(t) => { setMilestoneModalOpen(false); setTaskDefaultDueDate(undefined); setEditingTask(t); setTaskModalOpen(true) }}
+          onEditTask={handleEditTask}
           onEditMilestone={(m) => { setTaskModalOpen(false); setEditingMilestone(m); setMilestoneModalOpen(true) }}
         />
       </div>
@@ -424,7 +442,7 @@ export function OverviewPage() {
         </Card>
       </div>
 
-      <TaskForm open={taskModalOpen} task={editingTask} defaultDueDate={taskDefaultDueDate} variant="drawer" onClose={() => { setTaskModalOpen(false); setEditingTask(undefined); setTaskDefaultDueDate(undefined) }} />
+      <TaskForm open={taskModalOpen} task={editingTask} defaultDueDate={taskDefaultDueDate} variant="drawer" onDirtyChange={setTaskFormDirty} onClose={() => { setTaskModalOpen(false); setEditingTask(undefined); setTaskDefaultDueDate(undefined); setTaskFormDirty(false) }} />
       <MilestoneForm open={milestoneModalOpen} milestone={editingMilestone} variant="drawer" onClose={() => { setMilestoneModalOpen(false); setEditingMilestone(undefined) }} />
       <WorkstreamForm
         open={stageModalOpen}

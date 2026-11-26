@@ -143,6 +143,8 @@ export function OutlookWeekHourlyView({
   today,
   projectCode,
   projectName,
+  workstreamLabel,
+  wrapTaskName = false,
   selectedIds,
   selectedDay,
   draggingId,
@@ -170,6 +172,8 @@ export function OutlookWeekHourlyView({
   today: string
   projectCode: (pid: string) => string
   projectName: (pid: string) => string
+  workstreamLabel?: (wid: string) => string
+  wrapTaskName?: boolean
   selectedIds: Set<string>
   selectedDay: string
   draggingId: string
@@ -518,14 +522,16 @@ export function OutlookWeekHourlyView({
                       />
 
                       <div className="flex items-start gap-1 min-w-0 h-full">
-                        <CheckSquare className="h-3 w-3 shrink-0 mt-0.5" />
+                        <CheckSquare className={cn('h-3 w-3 shrink-0 mt-0.5', t.actionable === false && 'opacity-40')} />
                         <div className="min-w-0 flex-1">
-                          <p className="text-[11px] font-semibold truncate leading-tight">
+                          <p className={cn('text-[11px] font-semibold leading-tight', wrapTaskName ? 'break-words' : 'truncate', t.actionable === false && 'italic')}>
                             {isCompact ? `${t.name} · ${projectName(t.projectId)}` : t.name}
                           </p>
                           {!isCompact && (
                             <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
-                              {isResizingThis ? `${startLabel}–${endLabel}` : projectName(t.projectId)}
+                              {isResizingThis
+                                ? `${startLabel}–${endLabel}`
+                                : `${projectName(t.projectId)}${workstreamLabel?.(t.workstreamId) ? ` · ${workstreamLabel(t.workstreamId)}` : ''}${t.actionable === false ? ' (FYI)' : ''}`}
                             </p>
                           )}
                         </div>

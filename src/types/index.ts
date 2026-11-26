@@ -92,6 +92,7 @@ export interface Task extends BaseRecord {
   status: TaskStatus
   progress: number
   remarks: string
+  actionable?: boolean // true = executable task; false = FYI/informational only
 }
 
 export interface Milestone extends BaseRecord {

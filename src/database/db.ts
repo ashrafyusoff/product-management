@@ -50,6 +50,8 @@ export class ProductDatabase extends Dexie {
       risks: null,
       issues: null,
     })
+    // v4: adds actionable field (no schema change needed, Dexie stores it automatically)
+    this.version(4).stores({})
   }
 }
 

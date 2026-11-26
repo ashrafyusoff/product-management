@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NON_NPI_TASK_STATUSES, PRIORITIES, TASK_STATUSES, type Project, type Task, type Workstream } from '@/types'
 import { createTask, emptyTask, updateTask, type TaskInput } from '@/services/taskService'
 import { useTable } from '@/hooks/useTable'
@@ -38,6 +38,7 @@ export function TaskForm({
   defaultDueDate,
   nonNpiOnly = false,
   variant = 'modal',
+  onDirtyChange,
   onClose,
 }: {
   open: boolean
@@ -46,6 +47,7 @@ export function TaskForm({
   defaultDueDate?: string
   nonNpiOnly?: boolean
   variant?: 'modal' | 'drawer'
+  onDirtyChange?: (dirty: boolean) => void
   onClose: () => void
 }) {
   const title = task ? 'Edit Task' : 'Add Task'
@@ -56,6 +58,7 @@ export function TaskForm({
       defaultProjectId={defaultProjectId}
       defaultDueDate={defaultDueDate}
       nonNpiOnly={nonNpiOnly}
+      onDirtyChange={onDirtyChange}
       onClose={onClose}
     />
   )
@@ -78,17 +81,19 @@ function Body({
   defaultProjectId,
   defaultDueDate,
   nonNpiOnly,
+  onDirtyChange,
   onClose,
 }: {
   task?: Task
   defaultProjectId?: string
   defaultDueDate?: string
   nonNpiOnly?: boolean
+  onDirtyChange?: (dirty: boolean) => void
   onClose: () => void
 }) {
   const projects = useTable<Project>('projects') ?? []
   const workstreams = useTable<Workstream>('workstreams') ?? []
-  const [form, setForm] = useState<TaskInput>(() => {
+  const [initialForm] = useState<TaskInput>(() => {
     if (task) {
       return { ...task, startDate: task.startDate || task.createdAt?.slice(0, 10) || todayStr() }
     }
@@ -96,6 +101,11 @@ function Body({
     if (defaultDueDate) base.dueDate = defaultDueDate
     return base
   })
+  const [form, setForm] = useState<TaskInput>(initialForm)
+
+  useEffect(() => {
+    onDirtyChange?.(JSON.stringify(form) !== JSON.stringify(initialForm))
+  }, [form, initialForm, onDirtyChange])
 
   const diffMins = toMins(form.endTime) - toMins(form.startTime)
   const matchedPreset = DURATION_PRESETS.find((p) => p.value !== 'custom' && Number(p.value) === diffMins)?.value ?? 'custom'
@@ -224,6 +234,23 @@ function Body({
         </Field>
       </div>
       <Field label="Remarks"><Textarea value={form.remarks} onChange={(e) => set('remarks', e.target.value)} /></Field>
+      {/* Actionable toggle */}
+      <label className="flex items-center gap-2.5 cursor-pointer select-none group">
+        <input
+          type="checkbox"
+          checked={form.actionable !== false}
+          onChange={(e) => set('actionable', e.target.checked)}
+          className="h-4 w-4 rounded border-slate-300 text-primary accent-blue-600 cursor-pointer"
+        />
+        <span className="text-sm font-medium text-slate-700 group-hover:text-primary transition-colors">
+          Actionable
+        </span>
+        <span className="text-xs text-slate-400">
+          {form.actionable !== false
+            ? '✔ This task can be executed'
+            : 'ℹ FYI only — not an executable action'}
+        </span>
+      </label>
       <div className="flex justify-end gap-2">
         <Button type="button" onClick={onClose}>Cancel</Button>
         <Button type="submit" variant="primary">Save Task</Button>
