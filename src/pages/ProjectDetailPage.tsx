@@ -143,6 +143,7 @@ export function ProjectDetailPage() {
           <div className="flex-1 min-w-[260px]">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-bold text-slate-900">{p.name}</h2>
+              {p.nickname && <span className="text-sm font-semibold text-slate-500">({p.nickname})</span>}
               {p.packageType && <Badge color="indigo">{p.packageType}</Badge>}
               <Badge color="slate">{p.code}</Badge>
               <Badge>{p.priority}</Badge>

@@ -18,7 +18,12 @@ export function ProjectForm({ open, project, onClose }: { open: boolean; project
 function ProjectFormBody({ project, onClose }: { project?: Project; onClose: () => void }) {
   const [form, setForm] = useState<ProjectInput>(() =>
     project
-      ? { ...project, packageType: project.packageType ?? '', startDate: project.startDate || project.createdAt?.slice(0, 10) || todayStr() }
+      ? {
+          ...project,
+          nickname: project.nickname ?? '',
+          packageType: project.packageType ?? '',
+          startDate: project.startDate || project.createdAt?.slice(0, 10) || todayStr(),
+        }
       : emptyProject(),
   )
   const [error, setError] = useState('')
@@ -35,6 +40,7 @@ function ProjectFormBody({ project, onClose }: { project?: Project; onClose: () 
       const payload: ProjectInput = {
         ...form,
         name: form.name.trim(),
+        nickname: (form.nickname || '').trim(),
         packageType: (form.packageType || '').trim(),
       }
       if (project) await updateProject(project.id, payload)
@@ -66,6 +72,9 @@ function ProjectFormBody({ project, onClose }: { project?: Project; onClose: () 
         </Field>
         <Field label="Product Name" required>
           <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="AXON-400" />
+        </Field>
+        <Field label="Nickname">
+          <Input value={form.nickname ?? ''} onChange={(e) => set('nickname', e.target.value)} placeholder="e.g. Pegasus" />
         </Field>
         <Field label="Package Type">
           <Input value={form.packageType} onChange={(e) => set('packageType', e.target.value)} placeholder="48-QFN-EP" />

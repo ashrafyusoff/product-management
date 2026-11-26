@@ -19,7 +19,12 @@ function validate(i: TaskInput) {
 
 // A completed task gets 100% and a completion date automatically.
 function normalise(i: TaskInput): TaskInput {
-  const out = { ...i, name: i.name.trim(), progress: clampProgress(i.progress) }
+  const out = {
+    ...i,
+    name: i.name.trim(),
+    progress: clampProgress(i.progress),
+    actionable: i.actionable !== false,
+  }
   if (out.status === 'Completed') {
     out.progress = 100
     if (!out.completionDate) out.completionDate = todayStr()
@@ -155,5 +160,10 @@ export async function updateTasksStatus(ids: string[], status: Task['status']) {
 export const emptyTask = (projectId = ''): TaskInput => ({
   projectId, workstreamId: '', name: '', assignee: '', startDate: todayStr(), dueDate: '',
   startTime: '09:00', endTime: '10:00', completionDate: '',
+<<<<<<< HEAD
   priority: 'Medium', status: 'Not Started', progress: 0, remarks: '', actionable: true,
+=======
+  priority: 'Medium', status: 'Not Started', progress: 0, remarks: '',
+  actionable: true,
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
 })

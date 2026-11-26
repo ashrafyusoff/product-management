@@ -77,7 +77,7 @@ export function ProjectsPage() {
         if (stageFilter && !pStages.some((w) => w.category === stageFilter)) return false
         if (!q) return true
         const stageText = pStages.map((w) => `${w.category} ${w.name} ${w.status} ${w.remarks}`).join(' ')
-        return `${p.code} ${p.name} ${p.packageType ?? ''} ${p.description} ${stageText}`.toLowerCase().includes(q)
+        return `${p.code} ${p.name} ${p.nickname ?? ''} ${p.packageType ?? ''} ${p.description} ${stageText}`.toLowerCase().includes(q)
       })
       .sort((a, b) => (val(a) < val(b) ? -1 : val(a) > val(b) ? 1 : 0) * sort.dir)
   }, [projects, workstreams, search, stageFilter, status, sort])
@@ -290,6 +290,7 @@ function ProductWithStagesGroup({
               {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
             <span className="font-bold text-primary">{p.name}</span>
+            {p.nickname && <span className="text-xs font-semibold text-slate-500">({p.nickname})</span>}
             <Badge color="slate">{p.code}</Badge>
             <span className="text-[11px] font-normal text-slate-400">({stages.length} stages)</span>
           </div>

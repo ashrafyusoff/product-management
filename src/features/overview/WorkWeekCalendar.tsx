@@ -1,12 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
+<<<<<<< HEAD
 import { AlertCircle, CalendarDays, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Clock, Copy, Flag, GripVertical, Plus, Scissors, Sun, X } from 'lucide-react'
+=======
+import { AlertCircle, CalendarDays, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Clock, Copy, Flag, GripVertical, Info, Plus, Scissors, Sun, X } from 'lucide-react'
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
 import type { Milestone, Priority, Project, Task, Workstream } from '@/types'
 import { Badge, Button, Card } from '@/components/ui'
+import { useTable } from '@/hooks/useTable'
 import { usePersistedState } from '@/hooks/usePersistedState'
 import { duplicateTaskToDate, rescheduleTask, updateTasksPriority, updateTasksStatus } from '@/services/taskService'
 import { duplicateMilestoneToDate, rescheduleMilestone } from '@/services/milestoneService'
 import { cn, todayStr } from '@/utils/helpers'
 import { OutlookWeekHourlyView, type CalendarClipboard, type CalendarItemRef } from './OutlookWeekHourlyView'
+
+function toMins(hhmm?: string): number {
+  if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return 8 * 60
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + m
+}
+
+function fromMins(mins: number): string {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, mins))
+  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`
+}
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const
 const MINI_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const
@@ -119,10 +135,20 @@ const PRIORITY_LEGEND: { priority: Priority; boxCls: string }[] = [
 ]
 
 // Task colour is driven by Priority (High = orange, Medium = yellow, Completed = emerald green).
+<<<<<<< HEAD
 // Non-actionable (FYI) tasks use a dimmer gray border & muted background.
 function taskCardStyle(t: Task, _today: string): string {
   if (t.actionable === false) {
     return 'border-slate-300 border-l-4 border-l-slate-400 bg-slate-50 text-slate-500 opacity-70'
+=======
+// Non-actionable tasks (FYI) are dimmer with a neutral slate/gray border.
+function taskCardStyle(t: Task, _today: string): string {
+  if (t.actionable === false) {
+    if (t.status === 'Completed') {
+      return 'border-slate-300 border-l-4 border-l-slate-400 bg-slate-100/70 text-slate-500 opacity-70'
+    }
+    return 'border-slate-300 border-l-4 border-l-slate-400 bg-slate-100/80 text-slate-600 opacity-80'
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
   }
   if (t.status === 'Completed') {
     return 'border-emerald-400 border-l-4 border-l-emerald-600 bg-emerald-100/90 text-emerald-950'
@@ -154,8 +180,13 @@ export function WorkWeekCalendar({
   tasks,
   milestones,
   projects,
+<<<<<<< HEAD
   workstreams = [],
   isEditOpen = false,
+=======
+  workstreams: externalWorkstreams,
+  isEditTaskOpen,
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
   baseMonday: controlledMonday,
   onBaseMondayChange,
   onAddTask,
@@ -166,13 +197,19 @@ export function WorkWeekCalendar({
   milestones: Milestone[]
   projects: Project[]
   workstreams?: Workstream[]
+<<<<<<< HEAD
   isEditOpen?: boolean
+=======
+  isEditTaskOpen?: boolean
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
   baseMonday?: Date
   onBaseMondayChange?: (d: Date) => void
   onAddTask?: (dueDate: string) => void
   onEditTask?: (t: Task) => void
   onEditMilestone?: (m: Milestone) => void
 }) {
+  const tableWorkstreams = useTable<Workstream>('workstreams') ?? []
+  const workstreams = externalWorkstreams ?? tableWorkstreams
   const today = todayStr()
   // Start at current week's Monday by default; Prev/Next jumps by 1 month
   const [internalMonday, setInternalMonday] = useState<Date>(() => getMondayOfWeek(parseYmd(today)))
@@ -195,7 +232,11 @@ export function WorkWeekCalendar({
   const [priorityFilter, setPriorityFilter] = useState<string | null>(null)
   const [toast, setToast] = useState<string>('')
   const [miniCalOpen, setMiniCalOpen] = usePersistedState<boolean>('npi.calendar.miniCalOpen', true)
+<<<<<<< HEAD
   const [wrapTaskName, setWrapTaskName] = usePersistedState<boolean>('npi.calendar.wrapTaskName', false)
+=======
+  const [wrapTaskNames, setWrapTaskNames] = usePersistedState<boolean>('npi.calendar.wrapTaskNames', false)
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
 
   const selectedIds = useMemo(() => new Set(selectedItems.map((i) => i.id)), [selectedItems])
 
@@ -301,11 +342,27 @@ export function WorkWeekCalendar({
     if (!p) return ''
     return p.packageType && !p.isNonNpi ? `${p.name} (${p.packageType})` : p.name || p.code
   }
+<<<<<<< HEAD
   const workstreamLabel = (wid: string): string => {
     if (!wid) return ''
     const w = workstreams.find((x) => x.id === wid)
     if (!w) return ''
     return w.name && w.name !== w.category ? `${w.category}: ${w.name}` : w.category
+=======
+  const projectNickname = (pid: string) => {
+    const p = projects.find((x) => x.id === pid)
+    if (!p) return ''
+    return p.nickname || p.name || p.code || ''
+  }
+  const taskSubLabel = (t: Task) => {
+    const nick = projectNickname(t.projectId)
+    const ws = workstreams.find((w) => w.id === t.workstreamId)
+    const stage = ws ? (ws.category || ws.name || '') : ''
+    if (nick && stage) return `${nick} · ${stage}`
+    if (nick) return nick
+    if (stage) return stage
+    return projectCode(t.projectId)
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
   }
 
   const itemsByDay = useMemo(() => {
@@ -874,8 +931,12 @@ export function WorkWeekCalendar({
                         <div className="min-w-0 flex-1">
                           <p className={cn('font-semibold truncate leading-tight', isNonActionable && 'italic')}>{t.name}</p>
                           <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
+<<<<<<< HEAD
                             {t.priority}{wsLabel ? ` · ${wsLabel}` : ''} · Due {t.dueDate}
                             {isNonActionable && <span className="ml-1 opacity-70">(FYI)</span>}
+=======
+                            {projectNickname(t.projectId)}
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
                           </p>
                         </div>
                       </div>
@@ -911,8 +972,12 @@ export function WorkWeekCalendar({
             today={today}
             projectCode={projectCode}
             projectName={projectName}
+<<<<<<< HEAD
             workstreamLabel={workstreamLabel}
             wrapTaskName={wrapTaskName}
+=======
+            projectNickname={projectNickname}
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
             selectedIds={selectedIds}
             selectedDay={selectedDay}
             draggingId={draggingId}
@@ -1104,11 +1169,16 @@ export function WorkWeekCalendar({
                                 {!isTwoColMatrix && <GripVertical className="h-3.5 w-3.5 shrink-0 opacity-50 group-hover:opacity-90 mt-0.5" />}
                                 <CheckSquare className={cn('h-3 w-3 shrink-0 mt-0.5', isNonActionable && 'opacity-40')} />
                                 <div className="min-w-0 flex-1">
+<<<<<<< HEAD
                                   <p className={cn('font-semibold leading-tight', wrapTaskName ? 'break-words' : 'truncate', isNonActionable && 'italic')}>{t.name}</p>
                                   <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
                                     {projectCode(t.projectId)}{wsLabel ? ` · ${wsLabel}` : ''} · {t.priority}
                                     {isNonActionable && <span className="ml-1 opacity-70">(FYI)</span>}
                                   </p>
+=======
+                                  <p className="font-semibold truncate leading-tight">{t.name}</p>
+                                  <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">{projectNickname(t.projectId)}</p>
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
                                 </div>
                                 <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 bg-white/90 rounded px-1 py-0.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
                                   <button onClick={() => handleCopy(ref)} title="Copy task" className="p-0.5 hover:text-primary"><Copy className="h-3 w-3" /></button>

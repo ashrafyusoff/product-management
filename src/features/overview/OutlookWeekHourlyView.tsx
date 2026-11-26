@@ -8,6 +8,7 @@ export interface CalendarItemRef {
   kind: 'task' | 'milestone'
   id: string
   name: string
+  fromOverdue?: boolean
 }
 
 export interface CalendarClipboard {
@@ -143,8 +144,14 @@ export function OutlookWeekHourlyView({
   today,
   projectCode,
   projectName,
+<<<<<<< HEAD
   workstreamLabel,
   wrapTaskName = false,
+=======
+  projectNickname,
+  taskSubLabel,
+  wrapTaskNames,
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
   selectedIds,
   selectedDay,
   draggingId,
@@ -172,8 +179,14 @@ export function OutlookWeekHourlyView({
   today: string
   projectCode: (pid: string) => string
   projectName: (pid: string) => string
+<<<<<<< HEAD
   workstreamLabel?: (wid: string) => string
   wrapTaskName?: boolean
+=======
+  projectNickname?: (pid: string) => string
+  taskSubLabel?: (t: Task) => string
+  wrapTaskNames?: boolean
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
   selectedIds: Set<string>
   selectedDay: string
   draggingId: string
@@ -522,6 +535,7 @@ export function OutlookWeekHourlyView({
                       />
 
                       <div className="flex items-start gap-1 min-w-0 h-full">
+<<<<<<< HEAD
                         <CheckSquare className={cn('h-3 w-3 shrink-0 mt-0.5', t.actionable === false && 'opacity-40')} />
                         <div className="min-w-0 flex-1">
                           <p className={cn('text-[11px] font-semibold leading-tight', wrapTaskName ? 'break-words' : 'truncate', t.actionable === false && 'italic')}>
@@ -534,6 +548,29 @@ export function OutlookWeekHourlyView({
                                 : `${projectName(t.projectId)}${workstreamLabel?.(t.workstreamId) ? ` · ${workstreamLabel(t.workstreamId)}` : ''}${t.actionable === false ? ' (FYI)' : ''}`}
                             </p>
                           )}
+=======
+                        {t.actionable === false ? (
+                          <span className="text-[9px] font-bold text-slate-500 bg-slate-200/80 px-1 py-0.5 rounded shrink-0 mt-0.5" title="FYI of the day">FYI</span>
+                        ) : (
+                          <CheckSquare className="h-3 w-3 shrink-0 mt-0.5" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          {(() => {
+                            const displaySub = taskSubLabel ? taskSubLabel(t) : (projectNickname ? projectNickname(t.projectId) : projectName(t.projectId))
+                            return (
+                              <>
+                                <p className={cn("text-[11px] font-semibold leading-tight", wrapTaskNames ? "whitespace-normal break-words" : "truncate")}>
+                                  {isCompact ? `${t.name} · ${displaySub}` : t.name}
+                                </p>
+                                {!isCompact && (
+                                  <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
+                                    {isResizingThis ? `${startLabel}–${endLabel}` : displaySub}
+                                  </p>
+                                )}
+                              </>
+                            )
+                          })()}
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
                         </div>
                         <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 bg-white/90 rounded px-0.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => onCopy(ref)} title="Copy task" className="p-0.5 hover:text-primary"><Copy className="h-3 w-3" /></button>

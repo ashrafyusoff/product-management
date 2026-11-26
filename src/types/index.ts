@@ -49,6 +49,7 @@ export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number]
 export interface Project extends BaseRecord {
   code: string // Project / Product ID (e.g. PM-101)
   name: string // Product Name (e.g. AXON-400)
+  nickname?: string // Product Nickname
   packageType: string // Package Type (e.g. 48-QFN-EP)
   isNonNpi?: boolean
   nonNpiCategory?: string
@@ -92,7 +93,11 @@ export interface Task extends BaseRecord {
   status: TaskStatus
   progress: number
   remarks: string
+<<<<<<< HEAD
   actionable?: boolean // true = executable task; false = FYI/informational only
+=======
+  actionable?: boolean // true = can be executed; false = FYI of the day
+>>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
 }
 
 export interface Milestone extends BaseRecord {
