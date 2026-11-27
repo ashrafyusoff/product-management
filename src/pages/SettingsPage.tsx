@@ -41,6 +41,7 @@ const FILTER_STORAGE_KEYS = [
   'npi.calendar.weeksToShow',
   'npi.calendar.viewMode',
   'npi.calendar.filterProject',
+  'npi.calendar.asideWidth',
   'npi.projects.search',
   'npi.projects.stageFilter',
   'npi.projects.status',
@@ -83,6 +84,7 @@ export function SettingsPage() {
   // Synced workspace preferences
   const [weeksToShow, setWeeksToShow] = usePersistedState<number>('npi.calendar.weeksToShow', 4)
   const [thisWeekSortBy, setThisWeekSortBy] = usePersistedState<'priority' | 'due'>('npi.thisWeek.sortBy', 'priority')
+  const [asideWidth, setAsideWidth] = usePersistedState<number>('npi.calendar.asideWidth', 235)
   const [quickNotes, setQuickNotes] = usePersistedState<QuickNoteItem[]>('npi.overview.quickNotes', [])
 
   // Re-run whenever any table changes so counts stay live
@@ -177,6 +179,7 @@ export function SettingsPage() {
     }
     setWeeksToShow(4)
     setThisWeekSortBy('priority')
+    setAsideWidth(235)
     setMsg({ type: 'ok', text: 'All saved filters, sorting, and expand/collapse preferences have been reset to defaults.' })
   }
 
@@ -313,6 +316,24 @@ export function SettingsPage() {
               >
                 By Due Date
               </button>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+              Calendar Sidebar Width ({asideWidth}px)
+            </label>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setAsideWidth(235)
+                  setMsg({ type: 'ok', text: 'Calendar sidebar width reset to default (235px).' })
+                }}
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Reset Default (235px)
+              </Button>
             </div>
           </div>
 

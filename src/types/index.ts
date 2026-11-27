@@ -93,11 +93,17 @@ export interface Task extends BaseRecord {
   status: TaskStatus
   progress: number
   remarks: string
-<<<<<<< HEAD
   actionable?: boolean // true = executable task; false = FYI/informational only
-=======
-  actionable?: boolean // true = can be executed; false = FYI of the day
->>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
+  attachments?: TaskAttachment[] // metadata only; files live on the local server (data/attachments)
+}
+
+export interface TaskAttachment {
+  id: string
+  name: string
+  size: number
+  type: string
+  addedAt: string
+  source?: 'email' | 'upload'
 }
 
 export interface Milestone extends BaseRecord {

@@ -32,17 +32,19 @@ function normalise(i: TaskInput): TaskInput {
   return out
 }
 
-export async function createTask(input: TaskInput) {
+export async function createTask(input: TaskInput): Promise<Task> {
   const withStart = { ...input, startDate: input.startDate || todayStr() }
   validate(withStart)
   const data = normalise(withStart)
   await pushUndoSnapshot(`Create task "${data.name}"`)
   const now = nowIso()
   const id = newId()
+  const created: Task = { ...data, id, createdAt: now, updatedAt: now }
   await db.transaction('rw', [db.tasks, db.activityLogs], async () => {
-    await db.tasks.add({ ...data, id, createdAt: now, updatedAt: now })
+    await db.tasks.add(created)
     await logActivity('Task', id, data.projectId, 'Created', `Task "${data.name}" created`)
   })
+  return created
 }
 
 export async function updateTask(id: string, input: TaskInput) {
@@ -92,7 +94,7 @@ export async function rescheduleTask(id: string, newDueDate: string, newStartTim
   })
 }
 
-export async function duplicateTaskToDate(id: string, newDueDate: string) {
+export async function duplicateTaskToDate(id: string, newDueDate: string): Promise<Task> {
   const old = await db.tasks.get(id)
   if (!old) throw new ValidationError('Task no longer exists.')
   await pushUndoSnapshot(`Copy task "${old.name}"`)
@@ -106,22 +108,24 @@ export async function duplicateTaskToDate(id: string, newDueDate: string) {
   const now = nowIso()
   const newTaskId = newId()
   const copyName = `${old.name} (Copy)`
+  const copiedTask: Task = {
+    ...old,
+    id: newTaskId,
+    name: copyName,
+    startDate,
+    dueDate: newDueDate,
+    completionDate: '',
+    status: old.status === 'Completed' ? 'In Progress' : old.status,
+    progress: old.status === 'Completed' ? 0 : old.progress,
+    isSample: false,
+    createdAt: now,
+    updatedAt: now,
+  }
   await db.transaction('rw', [db.tasks, db.activityLogs], async () => {
-    await db.tasks.add({
-      ...old,
-      id: newTaskId,
-      name: copyName,
-      startDate,
-      dueDate: newDueDate,
-      completionDate: '',
-      status: old.status === 'Completed' ? 'In Progress' : old.status,
-      progress: old.status === 'Completed' ? 0 : old.progress,
-      isSample: false,
-      createdAt: now,
-      updatedAt: now,
-    })
+    await db.tasks.add(copiedTask)
     await logActivity('Task', newTaskId, old.projectId, 'Created', `Task "${copyName}" copied to ${newDueDate}`)
   })
+  return copiedTask
 }
 
 export async function updateTasksPriority(ids: string[], priority: Task['priority']) {
@@ -159,11 +163,6 @@ export async function updateTasksStatus(ids: string[], status: Task['status']) {
 
 export const emptyTask = (projectId = ''): TaskInput => ({
   projectId, workstreamId: '', name: '', assignee: '', startDate: todayStr(), dueDate: '',
-  startTime: '09:00', endTime: '10:00', completionDate: '',
-<<<<<<< HEAD
+  startTime: '', endTime: '', completionDate: '',
   priority: 'Medium', status: 'Not Started', progress: 0, remarks: '', actionable: true,
-=======
-  priority: 'Medium', status: 'Not Started', progress: 0, remarks: '',
-  actionable: true,
->>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
 })

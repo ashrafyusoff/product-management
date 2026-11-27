@@ -67,16 +67,12 @@ export function OverviewPage() {
   const [milestoneModalOpen, setMilestoneModalOpen] = useState(false)
   const [editingMilestone, setEditingMilestone] = useState<Milestone | undefined>()
 
-  // Feature 3: single-click switching — if drawer is already open, switch task with one click.
-  // Prompt only if the previous task has unsaved changes pending to save.
+  // Single-click switching — if drawer is already open, switch task with one click.
+  // Unsaved-changes prompt is handled inside TaskForm.
   function handleEditTask(t: Task) {
     setMilestoneModalOpen(false)
     setTaskDefaultDueDate(undefined)
     if (taskModalOpen && editingTask && editingTask.id === t.id) return
-    if (taskModalOpen && taskFormDirty) {
-      const ok = window.confirm('You have unsaved changes on the current task. Discard them and open the selected task?\n\n(Click Cancel to stay and save first)')
-      if (!ok) return
-    }
     setTaskFormDirty(false)
     setEditingTask(t)
     setTaskModalOpen(true)

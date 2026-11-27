@@ -95,7 +95,7 @@ interface PositionedTask {
 function layoutDayTasks(dayTasks: Task[]): PositionedTask[] {
   const items = dayTasks
     .map((task) => ({ task, ...resolveTaskTimeRange(task) }))
-    .sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin)
+    .sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin || (a.task.createdAt || '').localeCompare(b.task.createdAt || '') || a.task.id.localeCompare(b.task.id))
 
   const positioned: PositionedTask[] = []
   let cluster: typeof items = []
@@ -144,14 +144,10 @@ export function OutlookWeekHourlyView({
   today,
   projectCode,
   projectName,
-<<<<<<< HEAD
   workstreamLabel,
-  wrapTaskName = false,
-=======
   projectNickname,
   taskSubLabel,
-  wrapTaskNames,
->>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
+  wrapTaskName = false,
   selectedIds,
   selectedDay,
   draggingId,
@@ -170,6 +166,7 @@ export function OutlookWeekHourlyView({
   onDropTaskAtTime,
   onResizeTaskTime,
   onDropMilestone,
+  onDropExternalEmail,
   taskCardStyle,
   milestoneCardStyle,
 }: {
@@ -179,14 +176,10 @@ export function OutlookWeekHourlyView({
   today: string
   projectCode: (pid: string) => string
   projectName: (pid: string) => string
-<<<<<<< HEAD
   workstreamLabel?: (wid: string) => string
-  wrapTaskName?: boolean
-=======
   projectNickname?: (pid: string) => string
   taskSubLabel?: (t: Task) => string
-  wrapTaskNames?: boolean
->>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
+  wrapTaskName?: boolean
   selectedIds: Set<string>
   selectedDay: string
   draggingId: string
@@ -205,6 +198,7 @@ export function OutlookWeekHourlyView({
   onDropTaskAtTime: (taskId: string, ymd: string, startTime: string, endTime: string, ww: number) => void
   onResizeTaskTime?: (taskId: string, ymd: string, startTime: string, endTime: string) => void
   onDropMilestone: (milestoneId: string, ymd: string, ww: number) => void
+  onDropExternalEmail?: (dt: DataTransfer, ymd: string, startTime: string, endTime: string) => void
   taskCardStyle: (t: Task, today: string) => string
   milestoneCardStyle: (m: Milestone, today: string) => string
 }) {
@@ -255,7 +249,7 @@ export function OutlookWeekHourlyView({
 
   function handleColumnDragOver(e: React.DragEvent<HTMLDivElement>, ymd: string) {
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
+    e.dataTransfer.dropEffect = draggingId ? 'move' : 'copy'
     const dropMin = getDropMinutes(e)
     const topPx = ((dropMin - gridStartMin) / 60) * HOUR_HEIGHT
     if (!hoverSlot || hoverSlot.ymd !== ymd || hoverSlot.topPx !== topPx) {
@@ -268,7 +262,12 @@ export function OutlookWeekHourlyView({
     const dropMin = getDropMinutes(e)
     setHoverSlot(null)
     const raw = e.dataTransfer.getData('application/json')
-    if (!raw) return
+    if (!raw) {
+      const startTime = minutesToHhmm(dropMin)
+      const endTime = minutesToHhmm(Math.min(23 * 60 + 55, dropMin + 60))
+      onDropExternalEmail?.(e.dataTransfer, ymd, startTime, endTime)
+      return
+    }
     try {
       const payload = JSON.parse(raw) as CalendarItemRef
       if (payload.kind === 'task') {
@@ -535,46 +534,24 @@ export function OutlookWeekHourlyView({
                       />
 
                       <div className="flex items-start gap-1 min-w-0 h-full">
-<<<<<<< HEAD
-                        <CheckSquare className={cn('h-3 w-3 shrink-0 mt-0.5', t.actionable === false && 'opacity-40')} />
-                        <div className="min-w-0 flex-1">
-                          <p className={cn('text-[11px] font-semibold leading-tight', wrapTaskName ? 'break-words' : 'truncate', t.actionable === false && 'italic')}>
-                            {isCompact ? `${t.name} · ${projectName(t.projectId)}` : t.name}
-                          </p>
-                          {!isCompact && (
-                            <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
-                              {isResizingThis
-                                ? `${startLabel}–${endLabel}`
-                                : `${projectName(t.projectId)}${workstreamLabel?.(t.workstreamId) ? ` · ${workstreamLabel(t.workstreamId)}` : ''}${t.actionable === false ? ' (FYI)' : ''}`}
-                            </p>
-                          )}
-=======
-                        {t.actionable === false ? (
-                          <span className="text-[9px] font-bold text-slate-500 bg-slate-200/80 px-1 py-0.5 rounded shrink-0 mt-0.5" title="FYI of the day">FYI</span>
-                        ) : (
-                          <CheckSquare className="h-3 w-3 shrink-0 mt-0.5" />
-                        )}
                         <div className="min-w-0 flex-1">
                           {(() => {
-                            const displaySub = taskSubLabel ? taskSubLabel(t) : (projectNickname ? projectNickname(t.projectId) : projectName(t.projectId))
+                            const displaySub = taskSubLabel
+                              ? taskSubLabel(t)
+                              : `${projectNickname ? projectNickname(t.projectId) : projectName(t.projectId)}${workstreamLabel?.(t.workstreamId) ? ` · ${workstreamLabel(t.workstreamId)}` : ''}`
                             return (
                               <>
-                                <p className={cn("text-[11px] font-semibold leading-tight", wrapTaskNames ? "whitespace-normal break-words" : "truncate")}>
+                                <p className={cn('text-[11px] font-semibold leading-tight', wrapTaskName ? 'break-words' : 'truncate', t.actionable === false && 'italic')}>
                                   {isCompact ? `${t.name} · ${displaySub}` : t.name}
                                 </p>
                                 {!isCompact && (
-                                  <p className="text-[10px] opacity-80 truncate leading-tight mt-0.5">
+                                  <p className={cn('text-[11px] font-medium leading-tight mt-0.5', wrapTaskName ? 'break-words' : 'truncate')}>
                                     {isResizingThis ? `${startLabel}–${endLabel}` : displaySub}
                                   </p>
                                 )}
                               </>
                             )
                           })()}
->>>>>>> dba7bc961e680282f161f1fba77b6ecc7d00de21
-                        </div>
-                        <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 bg-white/90 rounded px-0.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
-                          <button onClick={() => onCopy(ref)} title="Copy task" className="p-0.5 hover:text-primary"><Copy className="h-3 w-3" /></button>
-                          <button onClick={() => onCut(ref)} title="Cut task to move" className="p-0.5 hover:text-primary"><Scissors className="h-3 w-3" /></button>
                         </div>
                       </div>
 

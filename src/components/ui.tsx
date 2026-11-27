@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
-import { GripHorizontal, Inbox, Loader2, X } from 'lucide-react'
+import { ChevronDown, GripHorizontal, Inbox, Loader2, X } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '@/utils/helpers'
 
@@ -252,14 +252,16 @@ export function LeftSlideDrawer({
   open,
   onClose,
   title,
+  sidePanel,
   children,
 }: {
   open: boolean
   onClose: () => void
   title: string
+  sidePanel?: ReactNode
   children: ReactNode
 }) {
-  const drawerRef = useRef<HTMLElement>(null)
+  const drawerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -283,27 +285,178 @@ export function LeftSlideDrawer({
   }, [open, onClose])
 
   return (
-    <aside
+    <div
       ref={drawerRef}
       aria-hidden={!open}
       className={cn(
-        'fixed inset-y-3 left-3 !mt-0 z-50 w-[330px] max-w-[92vw] bg-white border border-slate-200 shadow-2xl flex flex-col transition-transform duration-200 ease-out rounded-2xl overflow-hidden',
-        open ? 'translate-x-0 pointer-events-auto' : '-translate-x-[110%] pointer-events-none',
+        'fixed inset-y-3 left-3 !mt-0 z-50 max-w-[95vw] flex items-stretch gap-2 transition-transform duration-200 ease-out',
+        open ? 'translate-x-0 pointer-events-auto' : '-translate-x-[115%] pointer-events-none',
       )}
     >
-      <div className="flex h-14 items-center justify-between px-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
-        <h2 className="text-sm font-bold text-slate-800 truncate">{title}</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1.5 rounded-full hover:bg-slate-200/70 text-slate-600 hover:text-slate-900 transition-colors"
-          aria-label="Close"
-          title="Close panel"
-        >
-          <X className="h-4 w-4" />
-        </button>
+      <aside className="w-[330px] max-w-[92vw] bg-white border border-slate-200 shadow-2xl flex flex-col rounded-2xl overflow-hidden shrink-0">
+        <div className="flex h-14 items-center justify-between px-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
+          <h2 className="text-sm font-bold text-slate-800 truncate">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-full hover:bg-slate-200/70 text-slate-600 hover:text-slate-900 transition-colors"
+            aria-label="Close"
+            title="Close panel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3.5">{children}</div>
+      </aside>
+      {sidePanel}
+    </div>
+  )
+}
+
+// ---------- Searchable Select (alphabetically sorted, type-to-filter dropdown) ----------
+export function SearchableSelect({
+  value,
+  onChange,
+  options,
+  placeholder = 'Select…',
+  emptyLabel,
+  pill = false,
+  className = '',
+}: {
+  value: string
+  onChange: (value: string) => void
+  options: { value: string; label: string }[]
+  placeholder?: string
+  emptyLabel?: string
+  pill?: boolean
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const sortedOptions = [...options].sort((a, b) =>
+    a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }),
+  )
+  const selected = sortedOptions.find((o) => o.value === value)
+  const q = query.trim().toLowerCase()
+  const filtered = q
+    ? sortedOptions.filter((o) => o.label.toLowerCase().includes(q))
+    : sortedOptions
+
+  useEffect(() => {
+    if (!open) return
+    const onDocDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', onDocDown)
+    return () => document.removeEventListener('mousedown', onDocDown)
+  }, [open])
+
+  return (
+    <div ref={wrapRef} className={cn('relative', className)}>
+      <div
+        onClick={() => {
+          setOpen(true)
+          setTimeout(() => inputRef.current?.focus(), 0)
+        }}
+        className={cn(
+          'flex items-center justify-between gap-1 border border-slate-200 bg-white text-slate-800 cursor-text transition-colors',
+          pill ? 'h-8 rounded-full px-3 text-xs' : 'h-8 rounded-lg px-2.5 text-sm w-full',
+          open && 'ring-2 ring-primary/30 border-primary',
+        )}
+      >
+        {open ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setOpen(false)
+                setQuery('')
+              } else if (e.key === 'Enter') {
+                e.preventDefault()
+                if (filtered.length > 0) {
+                  onChange(filtered[0].value)
+                  setOpen(false)
+                  setQuery('')
+                }
+              }
+            }}
+            placeholder={selected ? selected.label : emptyLabel || placeholder}
+            className="w-full min-w-0 bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
+          />
+        ) : (
+          <span className={cn('truncate', !selected && 'text-slate-500')}>
+            {selected ? selected.label : emptyLabel || placeholder}
+          </span>
+        )}
+        <div className="flex items-center gap-0.5 shrink-0">
+          {value && emptyLabel && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onChange('')
+                setQuery('')
+              }}
+              title="Clear"
+              className="p-0.5 text-slate-400 hover:text-slate-700"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+          <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-3.5">{children}</div>
-    </aside>
+
+      {open && (
+        <div className="absolute left-0 right-0 z-50 mt-1 max-h-56 min-w-[180px] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+          {emptyLabel && (!q || emptyLabel.toLowerCase().includes(q)) && (
+            <button
+              type="button"
+              onClick={() => {
+                onChange('')
+                setOpen(false)
+                setQuery('')
+              }}
+              className={cn(
+                'w-full px-3 py-1.5 text-left text-xs hover:bg-slate-100',
+                !value ? 'font-semibold text-primary bg-primary/5' : 'text-slate-600',
+              )}
+            >
+              {emptyLabel}
+            </button>
+          )}
+          {filtered.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-slate-400 italic">No matches</p>
+          ) : (
+            filtered.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => {
+                  onChange(o.value)
+                  setOpen(false)
+                  setQuery('')
+                }}
+                className={cn(
+                  'w-full px-3 py-1.5 text-left text-xs truncate hover:bg-slate-100',
+                  o.value === value ? 'font-semibold text-primary bg-primary/5' : 'text-slate-700',
+                )}
+              >
+                {o.label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   )
 }

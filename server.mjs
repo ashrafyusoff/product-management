@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { randomUUID } from 'node:crypto'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT || 3001)
@@ -10,6 +11,54 @@ const HOST = process.env.HOST || '0.0.0.0'
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data')
 const DB_FILE = path.join(DATA_DIR, 'db.json')
 const DIST_DIR = path.join(__dirname, 'dist')
+// Task attachments are stored as real files (not inside db.json) to keep the DB small.
+const ATTACH_DIR = path.join(DATA_DIR, 'attachments')
+const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024
+
+const ATTACH_MIME = {
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.txt': 'text/plain; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+  '.msg': 'application/vnd.ms-outlook',
+  '.eml': 'message/rfc822',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls': 'application/vnd.ms-excel',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.doc': 'application/msword',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.zip': 'application/zip',
+}
+
+function safeFileName(name) {
+  const cleaned = String(name || 'file').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim().slice(0, 180)
+  return cleaned || 'file'
+}
+
+function readRawBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let total = 0
+    req.on('data', (chunk) => {
+      total += chunk.length
+      if (total > limit) {
+        reject(new Error(`Attachment exceeds ${Math.round(limit / 1048576)} MB limit`))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
 
 const EMPTY_DB = {
   projects: [],
@@ -132,6 +181,48 @@ const server = http.createServer(async (req, res) => {
       const parsed = JSON.parse(body || '{}')
       await writeDb(parsed)
       return sendJson(res, 200, { ok: true })
+    }
+
+    // ---- Task attachments ----
+    if (urlPath === '/api/attachments' && req.method === 'POST') {
+      const url = new URL(req.url || '/', 'http://localhost')
+      const name = safeFileName(url.searchParams.get('name'))
+      const buf = await readRawBody(req, MAX_ATTACHMENT_BYTES)
+      const id = randomUUID()
+      const dir = path.join(ATTACH_DIR, id)
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, name), buf)
+      return sendJson(res, 200, {
+        id,
+        name,
+        size: buf.length,
+        type: req.headers['content-type'] || 'application/octet-stream',
+      })
+    }
+
+    const attMatch = urlPath.match(/^\/api\/attachments\/([A-Za-z0-9-]{8,64})$/)
+    if (attMatch) {
+      const dir = path.join(ATTACH_DIR, attMatch[1])
+      if (req.method === 'GET') {
+        const files = await fs.readdir(dir).catch(() => [])
+        if (files.length === 0) return sendJson(res, 404, { error: 'Attachment not found' })
+        const name = files[0]
+        const data = await fs.readFile(path.join(dir, name))
+        const type = ATTACH_MIME[path.extname(name).toLowerCase()] || 'application/octet-stream'
+        const url = new URL(req.url || '/', 'http://localhost')
+        const inline = /^(image\/|application\/pdf|text\/)/.test(type) && url.searchParams.get('download') !== '1'
+        res.writeHead(200, {
+          'Content-Type': type,
+          'Content-Length': data.length,
+          'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
+          'Cache-Control': 'no-store',
+        })
+        return res.end(data)
+      }
+      if (req.method === 'DELETE') {
+        await fs.rm(dir, { recursive: true, force: true })
+        return sendJson(res, 200, { ok: true })
+      }
     }
 
     if (req.method === 'GET' || req.method === 'HEAD') {
